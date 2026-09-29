@@ -1,0 +1,8 @@
+node_modules/
+daemon.log
+daemon.pid
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+.vscode/

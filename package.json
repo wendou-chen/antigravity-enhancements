@@ -1,0 +1,81 @@
+{
+  "name": "antigravity-enhancements",
+  "displayName": "Antigravity Web Enhancements",
+  "description": "专为 Google Antigravity Workspace 定制的全能增强套件：LaTeX公式点击复制、Mermaid图表交互渲染、划词引用回复、Ctrl+Enter发送切换、悬浮控制球。",
+  "version": "1.0.0",
+  "publisher": "antigravity-dev",
+  "engines": {
+    "vscode": "^1.68.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "antiEnhance.toggle",
+        "title": "Anti Enhancements: 开启/关闭增强套件"
+      },
+      {
+        "command": "antiEnhance.reinject",
+        "title": "Anti Enhancements: 重新注入增强脚本 (热重载)"
+      },
+      {
+        "command": "antiEnhance.toggleSendMode",
+        "title": "Anti Enhancements: 切换发送模式 (Ctrl+Enter / Enter)"
+      }
+    ],
+    "configuration": {
+      "title": "Antigravity Web Enhancements",
+      "properties": {
+        "antiEnhance.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "是否启用 Antigravity 全能增强套件"
+        },
+        "antiEnhance.formulaCopy": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "是否启用 LaTeX 公式单击一键复制源码"
+        },
+        "antiEnhance.mermaidRender": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "是否启用 Mermaid 图表实时交互渲染与切换"
+        },
+        "antiEnhance.quoteReply": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "是否启用划词引用回复气泡"
+        },
+        "antiEnhance.floatingBall": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "是否在右下角常驻显示悬浮控制球 (FAB)"
+        },
+        "antiEnhance.sendMode": {
+          "type": "string",
+          "enum": [
+            "ctrl-enter",
+            "enter"
+          ],
+          "default": "ctrl-enter",
+          "scope": "window",
+          "description": "消息发送快捷键模式 (ctrl-enter: Ctrl+Enter发送/Enter换行, enter: Enter发送/Shift+Enter换行)"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}

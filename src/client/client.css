@@ -1,0 +1,342 @@
+﻿/* Antigravity Web Enhancements Client Styles */
+
+/* 0. 根容器防横向滚动与宽度响应式变量 */
+:root {
+  --anti-chat-max-width: 896px;
+}
+
+html, body {
+  overflow-x: hidden !important;
+  max-width: 100vw !important;
+  box-sizing: border-box !important;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* 消息流与输入框居中约束 (全屏自由调宽/中央聚焦) */
+.md-table-bleed > .mx-auto.w-full,
+[class*="group/user-input-step"],
+.md-table-bleed > div,
+[class*="overflow-y-auto"] > div.mx-auto {
+  max-width: var(--anti-chat-max-width) !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  transition: max-width 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* 1. LaTeX 公式高亮与点击反馈 */
+.katex, .katex-display, annotation[encoding="application/x-tex"] {
+  cursor: pointer !important;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  border-radius: 4px;
+  padding: 1px 3px;
+}
+
+.katex:hover, .katex-display:hover {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35) !important;
+}
+
+/* 2. 全局毛玻璃 Toast 提示容器 */
+.anti-toast-viewport {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: calc(100vw - 32px);
+}
+
+.anti-toast-card {
+  pointer-events: auto;
+  min-width: 220px;
+  max-width: 500px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: anti-toast-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(26, 27, 30, 0.95);
+  color: #F8FAFC;
+}
+
+.anti-toast-card.is-error {
+  background: rgba(153, 27, 27, 0.95);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.anti-toast-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.anti-toast-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.anti-toast-title {
+  font-weight: 500;
+}
+
+.anti-toast-preview {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: #93C5FD;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 400px;
+  margin-top: 2px;
+}
+
+@keyframes anti-toast-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 3. 划词引用胶囊气泡 (Quote Reply Pill) */
+.anti-quote-toolbar {
+  position: absolute;
+  z-index: 2147483640;
+  display: flex;
+  align-items: center;
+  border-radius: 20px;
+  background: rgba(26, 27, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  overflow: hidden;
+  padding: 0;
+  transform: translateY(6px);
+  transition: opacity 0.14s cubic-bezier(0, 0, 0.2, 1), transform 0.14s cubic-bezier(0, 0, 0.2, 1);
+  opacity: 0;
+  pointer-events: none;
+  max-width: calc(100vw - 20px);
+}
+
+.anti-quote-toolbar.is-visible,
+.anti-quote-toolbar.active {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  pointer-events: auto !important;
+}
+
+.anti-quote-btn-reply {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #F3F4F6 !important;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  cursor: pointer !important;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.anti-quote-btn-reply:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #93C5FD !important;
+}
+
+/* 4. Mermaid 图表交互容器 */
+.anti-mermaid-container {
+  margin: 14px 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(18, 19, 22, 0.65);
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  max-width: 100%;
+}
+
+.anti-mermaid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+
+.anti-mermaid-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.anti-mermaid-tab {
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #94A3B8;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.anti-mermaid-tab.is-active {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60A5FA;
+  font-weight: 500;
+}
+
+.anti-mermaid-viewport {
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: auto;
+  min-height: 80px;
+  max-width: 100%;
+}
+
+.anti-mermaid-viewport svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 5. 可拖拽悬浮控制球 (FAB) */
+.anti-fab-container {
+  position: fixed;
+  right: 28px;
+  bottom: 32px;
+  width: 40px;
+  height: 40px;
+  z-index: 2147483630;
+  pointer-events: none !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: visible;
+}
+
+.anti-fab-trigger {
+  position: relative;
+  pointer-events: auto !important;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(26, 27, 30, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer !important;
+  user-select: none;
+  touch-action: none;
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.anti-fab-trigger:hover {
+  transform: scale(1.08);
+  border-color: rgba(96, 165, 250, 0.5);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 14px rgba(59, 130, 246, 0.35);
+}
+
+.anti-fab-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.anti-fab-menu {
+  position: absolute;
+  bottom: 50px;
+  right: 0;
+  min-width: 220px;
+  background: rgba(26, 27, 30, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transform: translateY(8px) scale(0.95);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.15s ease;
+}
+
+.anti-fab-menu.is-active {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto !important;
+}
+
+.anti-fab-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  color: #94A3B8;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.anti-fab-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #E2E8F0;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+  width: 100%;
+}
+
+.anti-fab-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.anti-fab-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.anti-fab-badge {
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #94A3B8;
+}
+
+.anti-fab-badge.is-active {
+  background: rgba(37, 99, 235, 0.3);
+  color: #93C5FD;
+}
