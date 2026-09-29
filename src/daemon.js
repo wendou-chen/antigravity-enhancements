@@ -11,7 +11,9 @@ function log(msg) {
   try {
     fs.appendFileSync(LOG_FILE, line, 'utf-8');
   } catch {}
-  console.log(msg);
+  try {
+    console.log(msg);
+  } catch {}
 }
 
 // 1. Single Instance Check
