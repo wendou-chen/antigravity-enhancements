@@ -182,7 +182,7 @@ class CDPInjector {
         resolve(false);
       }, 4000);
 
-      const checkScript = `Boolean(document.getElementById('anti-enhancements-style') && document.querySelector('.anti-fab-container'))`;
+      const checkScript = `Boolean(document.getElementById('anti-enhancements-style') && document.getElementById('anti-enhancements-style').getAttribute('data-version') === '2.1.0' && document.querySelector('.anti-fab-container'))`;
 
       ws.on('open', () => {
         ws.send(JSON.stringify({

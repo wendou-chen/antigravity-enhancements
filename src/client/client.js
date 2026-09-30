@@ -1,8 +1,31 @@
 /**
  * Antigravity Web Enhancements Client Payload
  * Injected into Antigravity Workspace DOM via Chrome DevTools Protocol
+ * Features: LaTeX Copy, Mermaid Render, Quote Reply, Trancy Selection Translation, Vocabulary Favorites, Width Adjust
  */
 (function () {
+  // 0. 全局单例权威状态锁（确保无论注入多少次、旧闭包如何残留，全部以全局状态为准）
+  window.__TRANCY_GLOBAL_CONFIG__ = window.__TRANCY_GLOBAL_CONFIG__ || {
+    enabled: localStorage.getItem('anti_trancy_enabled') === 'true', // 默认彻底关闭
+    triggerMode: localStorage.getItem('anti_trancy_trigger_mode') || 'ctrl' // 'ctrl' | 'auto'
+  };
+
+  // 清理旧版本挂载的 DOM
+  try {
+    document.querySelectorAll('.anti-fab-container, .anti-quote-toolbar, .trancy-card-container, .trancy-voice-overlay, .anti-input-mic-btn').forEach(el => el.remove());
+  } catch(e) {}
+
+  if (window.__ANTI_ENHANCEMENTS_CLEANUP__) {
+    try { window.__ANTI_ENHANCEMENTS_CLEANUP__(); } catch (e) {}
+  }
+  window.__ANTI_ENHANCEMENTS_LOADED__ = true;
+
+  const cleanups = [];
+  window.__ANTI_ENHANCEMENTS_CLEANUP__ = function() {
+    cleanups.forEach(fn => { try { fn(); } catch(e){} });
+    document.querySelectorAll('.anti-fab-container, .anti-quote-toolbar, .trancy-card-container, .trancy-voice-overlay, .anti-input-mic-btn').forEach(el => el.remove());
+  };
+
   // 0. 锁定视口溢出
   try {
     if (document.documentElement) {
@@ -29,7 +52,11 @@
     formulaCopyEnabled: true,
     mermaidEnabled: true,
     quoteReplyEnabled: true,
-    sendMode: localStorage.getItem('anti_enhance_send_mode') || 'ctrl-enter', // 'ctrl-enter' | 'enter'
+    get trancyTranslateEnabled() { return window.__TRANCY_GLOBAL_CONFIG__.enabled; },
+    set trancyTranslateEnabled(val) { window.__TRANCY_GLOBAL_CONFIG__.enabled = Boolean(val); localStorage.setItem('anti_trancy_enabled', val ? 'true' : 'false'); },
+    get trancyTriggerMode() { return window.__TRANCY_GLOBAL_CONFIG__.triggerMode; },
+    set trancyTriggerMode(val) { window.__TRANCY_GLOBAL_CONFIG__.triggerMode = val; localStorage.setItem('anti_trancy_trigger_mode', val); },
+    sendMode: localStorage.getItem('anti_enhance_send_mode') || 'ctrl-enter',
     widthMode: localStorage.getItem('anti_enhance_chat_width') || 'standard',
   };
 
@@ -55,21 +82,9 @@
     applyChatWidth(WIDTH_ORDER[nextIndex], true);
   }
 
-  // 立即应用保存的宽度
   applyChatWidth(state.widthMode, false);
 
-  if (window.__ANTI_ENHANCEMENTS_LOADED__) {
-    console.log('[AntiEnhance] Already active, re-applied width state.');
-    if (!document.querySelector('.anti-fab-container')) {
-      // FAB 被 SPA 页面重绘移除时，允许重新挂载
-      window.__ANTI_ENHANCEMENTS_LOADED__ = false;
-    } else {
-      return;
-    }
-  }
-  window.__ANTI_ENHANCEMENTS_LOADED__ = true;
-
-  console.log('[AntiEnhance] Initializing Antigravity Web Enhancements...');
+  console.log('[AntiEnhance] Initializing Antigravity Web Enhancements v2.0 (Global Guard Active)...');
 
   // -------------------------------------------------------------
   // 1. Toast Notification System
@@ -87,7 +102,7 @@
 
     const icon = document.createElement('div');
     icon.className = 'anti-toast-icon';
-    icon.textContent = isError ? '⚠️' : '📐';
+    icon.textContent = isError ? '⚠️' : '✨';
 
     const content = document.createElement('div');
     content.className = 'anti-toast-content';
@@ -117,7 +132,357 @@
   }
 
   // -------------------------------------------------------------
-  // 2. LaTeX Formula Click-to-Copy
+  // 2. Trancy 本地翻译引擎与生词本管理
+  // -------------------------------------------------------------
+  const TrancyVocabulary = {
+    getAll() {
+      try {
+        return JSON.parse(localStorage.getItem('anti_trancy_vocabulary') || '[]');
+      } catch {
+        return [];
+      }
+    },
+    saveAll(list) {
+      localStorage.setItem('anti_trancy_vocabulary', JSON.stringify(list));
+    },
+    has(word) {
+      if (!word) return false;
+      const list = this.getAll();
+      const norm = word.trim().toLowerCase();
+      return list.some(x => x.word && x.word.trim().toLowerCase() === norm);
+    },
+    add(item) {
+      if (!item || !item.word) return false;
+      const list = this.getAll();
+      const norm = item.word.trim().toLowerCase();
+      const idx = list.findIndex(x => x.word && x.word.trim().toLowerCase() === norm);
+      const entry = {
+        id: 'vocab_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        word: item.word.trim(),
+        phonetic: item.phonetic || '',
+        translation: item.translation || '',
+        explanation: item.explanation || '',
+        examples: Array.isArray(item.examples) ? item.examples : [],
+        context: item.context || '',
+        createdAt: new Date().toISOString()
+      };
+      if (idx >= 0) {
+        list[idx] = Object.assign({}, list[idx], entry, { createdAt: list[idx].createdAt });
+      } else {
+        list.unshift(entry);
+      }
+      this.saveAll(list);
+      return true;
+    },
+    remove(word) {
+      if (!word) return false;
+      const list = this.getAll();
+      const norm = word.trim().toLowerCase();
+      const filtered = list.filter(x => x.word && x.word.trim().toLowerCase() !== norm);
+      if (filtered.length !== list.length) {
+        this.saveAll(filtered);
+        return true;
+      }
+      return false;
+    }
+  };
+
+  const TrancyEngine = {
+    async query(text) {
+      const cleanText = text.trim();
+      const isSingleWord = !cleanText.includes(' ') && cleanText.length <= 40;
+
+      if (isSingleWord) {
+        try {
+          const res = await fetch('http://127.0.0.1:8000/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer sk-gemini'
+            },
+            body: JSON.stringify({
+              model: 'gemini-3.8-flash',
+              messages: [
+                {
+                  role: 'system',
+                  content: '你是一个专业的英语词典与翻译引擎。用户给出一个单词或短语，请直接返回 JSON：{"phonetic": "/音标/", "translation": "中文释义", "explanation": "简要解析", "examples": [{"en": "英文例句", "zh": "例句中文翻译"}]}'
+                },
+                {
+                  role: 'user',
+                  content: cleanText
+                }
+              ],
+              temperature: 0.1
+            }),
+            signal: AbortSignal.timeout(4500)
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const rawContent = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+            if (rawContent) {
+              const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                return {
+                  word: cleanText,
+                  phonetic: parsed.phonetic || '',
+                  translation: parsed.translation || '',
+                  explanation: parsed.explanation || '',
+                  examples: parsed.examples || [],
+                  source: 'Gemini Web2API (Dict)'
+                };
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      try {
+        const gtRes = await fetch('http://127.0.0.1:8000/v1beta/models/google-translate:generateContent?sl=auto&tl=zh-CN', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: cleanText }] }]
+          }),
+          signal: AbortSignal.timeout(3500)
+        });
+
+        if (gtRes.ok) {
+          const gtData = await gtRes.json();
+          const translated = gtData.candidates && gtData.candidates[0] && gtData.candidates[0].content && gtData.candidates[0].content.parts && gtData.candidates[0].content.parts[0] && gtData.candidates[0].content.parts[0].text;
+          if (translated) {
+            return {
+              word: cleanText,
+              phonetic: '',
+              translation: translated.trim(),
+              explanation: '',
+              examples: [],
+              source: 'Gemini Web2API (GT)'
+            };
+          }
+        }
+      } catch (e) {}
+
+      try {
+        const publicRes = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=${encodeURIComponent(cleanText)}`, {
+          signal: AbortSignal.timeout(3000)
+        });
+        if (publicRes.ok) {
+          const publicData = await publicRes.json();
+          if (Array.isArray(publicData) && Array.isArray(publicData[0])) {
+            const trans = publicData[0].map(x => x[0]).join('');
+            return {
+              word: cleanText,
+              phonetic: '',
+              translation: trans,
+              explanation: '',
+              examples: [],
+              source: 'Google Translate'
+            };
+          }
+        }
+      } catch (e) {}
+
+      return {
+        word: cleanText,
+        phonetic: '',
+        translation: '翻译服务暂时无法连接',
+        explanation: '',
+        examples: [],
+        source: 'Offline'
+      };
+    }
+  };
+
+  function playTts(text) {
+    if (!text || typeof window === 'undefined') return;
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = /^[\u4e00-\u9fa5]/.test(text) ? 'zh-CN' : 'en-US';
+      u.rate = 0.9;
+      window.speechSynthesis.speak(u);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 3. Trancy 划词智能悬浮卡片 (Selection Translator)
+  // -------------------------------------------------------------
+  let currentCard = null;
+
+  function removeTrancyCard() {
+    document.querySelectorAll('.trancy-card-container').forEach(el => el.remove());
+    currentCard = null;
+  }
+
+  function initTrancySelection() {
+    const onMouseUp = (e) => {
+      // 核心开关守卫：如果全局未开启，坚决不响应任何划词
+      if (!window.__TRANCY_GLOBAL_CONFIG__ || !window.__TRANCY_GLOBAL_CONFIG__.enabled) {
+        removeTrancyCard();
+        return;
+      }
+
+      // 如果是 Ctrl 模式，但用户没有按住 Ctrl/Cmd 键，坚决不打扰
+      if (window.__TRANCY_GLOBAL_CONFIG__.triggerMode === 'ctrl' && !e.ctrlKey && !e.metaKey) {
+        removeTrancyCard();
+        return;
+      }
+
+      if (e.target && e.target.closest && e.target.closest('.trancy-card-container, .anti-fab-container, .anti-input-mic-btn, .trancy-voice-overlay')) {
+        return;
+      }
+
+      setTimeout(async () => {
+        if (!window.__TRANCY_GLOBAL_CONFIG__ || !window.__TRANCY_GLOBAL_CONFIG__.enabled) {
+          removeTrancyCard();
+          return;
+        }
+
+        const sel = window.getSelection();
+        const text = sel ? sel.toString().trim() : '';
+
+        if (!text || text.length === 0 || text.length > 2000) {
+          removeTrancyCard();
+          return;
+        }
+
+        if (e.target && ['INPUT', 'TEXTAREA'].includes(e.target.tagName) && e.target.closest && e.target.closest('.group\\/user-input-step')) {
+          return;
+        }
+
+        if (!sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+
+        if (rect.width === 0 && rect.height === 0) {
+          removeTrancyCard();
+          return;
+        }
+
+        removeTrancyCard();
+
+        const card = document.createElement('div');
+        card.className = 'trancy-card-container is-visible';
+
+        const scrollX = window.scrollX || window.pageXOffset || 0;
+        const scrollY = window.scrollY || window.pageYOffset || 0;
+        let top = rect.bottom + scrollY + 8;
+        let left = rect.left + scrollX + (rect.width / 2) - 165;
+
+        if (left < 16) left = 16;
+        if (left + 330 > window.innerWidth - 16) left = window.innerWidth - 346;
+        if (top + 260 > window.innerHeight + scrollY) {
+          top = Math.max(16, rect.top + scrollY - 240);
+        }
+
+        card.style.top = `${top}px`;
+        card.style.left = `${left}px`;
+
+        const isFav = TrancyVocabulary.has(text);
+
+        card.innerHTML = `
+          <div class="trancy-header">
+            <div class="trancy-title-wrap">
+              <span class="trancy-word" title="${escapeHtml(text)}">${escapeHtml(text)}</span>
+              <span class="trancy-phonetic" id="trancy-card-phonetic"></span>
+            </div>
+            <div class="trancy-header-actions">
+              <button class="trancy-btn-action" id="trancy-btn-tts" title="朗读发音">🔊</button>
+              <button class="trancy-btn-action ${isFav ? 'is-fav' : ''}" id="trancy-btn-fav" title="加入生词本">★</button>
+            </div>
+          </div>
+          <div class="trancy-body" id="trancy-card-body">
+            <div class="trancy-skeleton">
+              <div class="trancy-skeleton-line" style="width: 85%;"></div>
+              <div class="trancy-skeleton-line" style="width: 60%;"></div>
+              <div class="trancy-skeleton-line" style="width: 75%;"></div>
+            </div>
+          </div>
+          <div class="trancy-footer">
+            <span class="trancy-engine-tag" id="trancy-card-engine">⚡ Trancy 引擎</span>
+            <span>Antigravity 沉浸翻译</span>
+          </div>
+        `;
+
+        document.body.appendChild(card);
+        currentCard = card;
+
+        card.querySelector('#trancy-btn-tts').addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          playTts(text);
+        });
+
+        let currentResult = null;
+
+        const favBtn = card.querySelector('#trancy-btn-fav');
+        favBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (TrancyVocabulary.has(text)) {
+            TrancyVocabulary.remove(text);
+            favBtn.classList.remove('is-fav');
+            showToast('已移出生词本', text);
+          } else {
+            TrancyVocabulary.add(currentResult || { word: text, translation: '' });
+            favBtn.classList.add('is-fav');
+            showToast('★ 已加入生词本', text);
+          }
+        });
+
+        const result = await TrancyEngine.query(text);
+        if (currentCard !== card) return;
+
+        currentResult = result;
+        const phoneticEl = card.querySelector('#trancy-card-phonetic');
+        if (phoneticEl && result.phonetic) {
+          phoneticEl.textContent = result.phonetic;
+        }
+
+        const engineEl = card.querySelector('#trancy-card-engine');
+        if (engineEl && result.source) {
+          engineEl.textContent = '⚡ ' + result.source;
+        }
+
+        const bodyEl = card.querySelector('#trancy-card-body');
+        if (bodyEl) {
+          let bodyHtml = `<div class="trancy-trans-text">${escapeHtml(result.translation)}</div>`;
+          if (result.explanation) {
+            bodyHtml += `<div class="trancy-explanation">${escapeHtml(result.explanation)}</div>`;
+          }
+          if (result.examples && result.examples.length > 0) {
+            bodyHtml += '<div class="trancy-examples">';
+            result.examples.forEach(ex => {
+              bodyHtml += `
+                <div class="trancy-example-item">
+                  <div class="trancy-example-en">💡 ${escapeHtml(ex.en)}</div>
+                  <div class="trancy-example-zh">${escapeHtml(ex.zh)}</div>
+                </div>
+              `;
+            });
+            bodyHtml += '</div>';
+          }
+          bodyEl.innerHTML = bodyHtml;
+        }
+      }, 30);
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        removeTrancyCard();
+      }
+    };
+
+    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('keydown', onKeyDown);
+    cleanups.push(() => {
+      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('keydown', onKeyDown);
+    });
+  }
+
+  // -------------------------------------------------------------
+  // 5. LaTeX Formula Click-to-Copy
   // -------------------------------------------------------------
   function extractLatex(target) {
     const katexEl = target.closest('.katex, .katex-display');
@@ -139,7 +504,7 @@
   }
 
   function initFormulaCopy() {
-    document.addEventListener('click', (e) => {
+    const onDocClick = (e) => {
       if (!state.formulaCopyEnabled) return;
       const target = e.target;
       if (!target) return;
@@ -149,203 +514,187 @@
         e.preventDefault();
         e.stopPropagation();
         navigator.clipboard.writeText(latex).then(() => {
-          showToast('已复制 LaTeX 源码', latex);
-        }).catch(() => {
-          showToast('复制失败', latex, true);
+          showToast('LaTeX 公式已复制', latex.length > 45 ? latex.slice(0, 45) + '...' : latex);
         });
       }
-    }, true);
-  }
-
-  // -------------------------------------------------------------
-  // 3. Selection Quote Reply
-  // -------------------------------------------------------------
-  function findActiveComposerInput() {
-    const monaco = document.querySelector('.monaco-editor [contenteditable="true"], .monaco-mouse-cursor-text');
-    if (monaco) return monaco;
-
-    const activeEl = document.activeElement;
-    if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
-      return activeEl;
-    }
-
-    return document.querySelector('textarea, [contenteditable="true"]');
-  }
-
-  function appendTextToComposer(text) {
-    const quoteText = text.split('\n').map(line => `> ${line}`).join('\n') + '\n\n';
-    const input = findActiveComposerInput();
-    if (!input) {
-      navigator.clipboard.writeText(quoteText);
-      showToast('已复制引用内容到剪贴板', text.slice(0, 50));
-      return;
-    }
-
-    if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
-      const val = input.value || '';
-      input.value = val ? `${val}\n${quoteText}` : quoteText;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-      showToast('已引用至输入框', text.slice(0, 40));
-    } else if (input.isContentEditable) {
-      input.focus();
-      document.execCommand('insertText', false, quoteText);
-      showToast('已引用至输入框', text.slice(0, 40));
-    }
-  }
-
-  function initQuoteReply() {
-    let toolbar = document.querySelector('.anti-quote-toolbar');
-    if (!toolbar) {
-      toolbar = document.createElement('div');
-      toolbar.className = 'anti-quote-toolbar';
-      toolbar.innerHTML = `<button type="button" class="anti-quote-btn-reply">💬 引用回复</button>`;
-      document.body.appendChild(toolbar);
-    }
-
-    const btn = toolbar.querySelector('.anti-quote-btn-reply');
-    let currentSelectedText = '';
-
-    btn.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (currentSelectedText) {
-        appendTextToComposer(currentSelectedText);
-        toolbar.classList.remove('is-visible', 'active');
-        window.getSelection()?.removeAllRanges();
-      }
-    });
-
-    const updateToolbar = () => {
-      if (!state.quoteReplyEnabled) {
-        toolbar.classList.remove('is-visible', 'active');
-        return;
-      }
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !sel.rangeCount) {
-        toolbar.classList.remove('is-visible', 'active');
-        currentSelectedText = '';
-        return;
-      }
-
-      const text = sel.toString().trim();
-      if (text.length < 2) {
-        toolbar.classList.remove('is-visible', 'active');
-        currentSelectedText = '';
-        return;
-      }
-
-      currentSelectedText = text;
-      const range = sel.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-
-      if (rect.width === 0 && rect.height === 0) {
-        toolbar.classList.remove('is-visible', 'active');
-        return;
-      }
-
-      const maxLeft = Math.max(10, window.innerWidth - 130);
-      const left = Math.max(10, Math.min(maxLeft, window.scrollX + rect.left + rect.width / 2 - 50));
-      toolbar.style.top = `${Math.max(10, window.scrollY + rect.top - 42)}px`;
-      toolbar.style.left = `${left}px`;
-      toolbar.classList.add('is-visible', 'active');
     };
+    document.addEventListener('click', onDocClick);
+    cleanups.push(() => document.removeEventListener('click', onDocClick));
+  }
 
-    document.addEventListener('selectionchange', () => {
-      setTimeout(updateToolbar, 10);
-    });
+  // -------------------------------------------------------------
+  // 6. 划词引用快捷回复 (Quote Reply)
+  // -------------------------------------------------------------
+  function initQuoteReply() {
+    let quoteToolbar = null;
 
-    document.addEventListener('mouseup', () => {
-      setTimeout(updateToolbar, 20);
-    });
+    function getToolbar() {
+      if (quoteToolbar) return quoteToolbar;
+      quoteToolbar = document.createElement('div');
+      quoteToolbar.className = 'anti-quote-toolbar';
+      quoteToolbar.innerHTML = `
+        <button class="anti-quote-btn-reply" id="anti-btn-quote-reply">
+          <span>💬</span>
+          <span>引用回复</span>
+        </button>
+      `;
+      document.body.appendChild(quoteToolbar);
 
-    // Alt+Q 快捷键引用
-    window.addEventListener('keydown', (e) => {
-      if (e.altKey && (e.key === 'q' || e.key === 'Q')) {
+      quoteToolbar.querySelector('#anti-btn-quote-reply').addEventListener('click', () => {
         const sel = window.getSelection();
         const text = sel ? sel.toString().trim() : '';
-        if (text) {
-          e.preventDefault();
-          appendTextToComposer(text);
-          toolbar.classList.remove('is-visible', 'active');
+        if (!text) return;
+
+        const input = document.querySelector('textarea, div[contenteditable="true"]');
+        if (input) {
+          const quoteStr = '> ' + text.split('\n').join('\n> ') + '\n\n';
+          input.focus();
+          if (input.tagName === 'TEXTAREA') {
+            input.value = quoteStr + input.value;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          } else if (input.isContentEditable) {
+            document.execCommand('insertText', false, quoteStr);
+          }
+          showToast('已引用选中内容', text.slice(0, 30) + '...');
         }
-      }
-    }, true);
+        quoteToolbar.classList.remove('is-visible');
+      });
+
+      return quoteToolbar;
+    }
+
+    const onQuoteMouseUp = (e) => {
+      if (!state.quoteReplyEnabled) return;
+      if (e.target.closest && e.target.closest('.anti-quote-toolbar, .trancy-card-container, .anti-fab-container')) return;
+
+      setTimeout(() => {
+        const sel = window.getSelection();
+        const text = sel ? sel.toString().trim() : '';
+        if (text && text.length > 3) {
+          const tb = getToolbar();
+          const rect = sel.getRangeAt(0).getBoundingClientRect();
+          const scrollX = window.scrollX || window.pageXOffset || 0;
+          const scrollY = window.scrollY || window.pageYOffset || 0;
+          tb.style.top = `${rect.top + scrollY - 38}px`;
+          tb.style.left = `${rect.left + scrollX}px`;
+          tb.classList.add('is-visible');
+        } else if (quoteToolbar) {
+          quoteToolbar.classList.remove('is-visible');
+        }
+      }, 50);
+    };
+
+    document.addEventListener('mouseup', onQuoteMouseUp);
+    cleanups.push(() => document.removeEventListener('mouseup', onQuoteMouseUp));
   }
 
   // -------------------------------------------------------------
-  // 4. Send Mode & Global Shortcuts (Alt+W 调宽)
+  // 7. 发送快捷键与全局监听
   // -------------------------------------------------------------
   function initKeyboardShortcuts() {
-    window.addEventListener('keydown', (e) => {
-      // 1. Alt+W 快速切换页面阅读宽度
-      if (e.altKey && (e.key === 'w' || e.key === 'W' || e.code === 'KeyW')) {
+    const onKey = (e) => {
+      // Alt+Shift+T 快速开关划词翻译
+      if (e.altKey && e.shiftKey && (e.key === 't' || e.key === 'T')) {
         e.preventDefault();
-        e.stopPropagation();
-        cycleChatWidth();
+        state.trancyTranslateEnabled = !state.trancyTranslateEnabled;
+        if (!state.trancyTranslateEnabled) {
+          removeTrancyCard();
+        }
+        const b = document.getElementById('anti-fab-trancy');
+        if (b) {
+          b.textContent = state.trancyTranslateEnabled ? (state.trancyTriggerMode === 'ctrl' ? 'Ctrl+划词' : '开') : '关';
+          b.className = `anti-fab-badge ${state.trancyTranslateEnabled ? 'is-active' : ''}`;
+        }
+        showToast('Trancy 划词翻译', state.trancyTranslateEnabled ? `已开启 (${state.trancyTriggerMode === 'ctrl' ? '按住 Ctrl 划选才翻译' : '自动弹出'})` : '已彻底关闭');
         return;
       }
 
-      // 2. 发送模式切换拦截
-      if (e.key === 'Enter') {
-        const target = e.target;
-        if (!target) return;
+      const isTextarea = e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
+      if (!isTextarea) return;
 
-        const isInput = target.tagName === 'TEXTAREA' || target.isContentEditable;
-        if (!isInput) return;
-
-        if (state.sendMode === 'ctrl-enter') {
-          if (e.ctrlKey || e.metaKey) {
-            return;
-          } else if (!e.shiftKey && !e.altKey) {
-            e.stopPropagation();
+      if (state.sendMode === 'ctrl-enter') {
+        if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          // Enter 换行
+        } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          const sendBtn = document.querySelector('button[aria-label*="Send"], button[type="submit"], [class*="send-button"]');
+          if (sendBtn) {
+            e.preventDefault();
+            sendBtn.click();
           }
         }
       }
-    }, true);
+    };
+    document.addEventListener('keydown', onKey, true);
+    cleanups.push(() => document.removeEventListener('keydown', onKey, true));
   }
 
   // -------------------------------------------------------------
-  // 5. Draggable Floating Action Button (FAB)
+  // 8. 可拖拽 FAB 悬浮控制球 (功能中心)
   // -------------------------------------------------------------
   function initFloatingBall() {
-    let container = document.querySelector('.anti-fab-container');
-    if (container) return;
+    const existing = document.querySelector('.anti-fab-container');
+    if (existing) existing.remove();
 
-    container = document.createElement('div');
+    const container = document.createElement('div');
     container.className = 'anti-fab-container';
+
+    let trancyLabel = '关';
+    if (state.trancyTranslateEnabled) {
+      trancyLabel = state.trancyTriggerMode === 'ctrl' ? 'Ctrl+划词' : '自动开';
+    }
+
     container.innerHTML = `
-      <div class="anti-fab-trigger" title="Antigravity 全能增强套件 (拖拽移动)">
+      <div class="anti-fab-trigger" title="Antigravity 增强与 Trancy 翻译中心">
         <span class="anti-fab-icon">⚡</span>
       </div>
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
-          <span>Anti Enhancements</span>
-          <span style="color:#60A5FA;">v1.2</span>
+          <span>Antigravity · Trancy 增强</span>
+          <span style="font-size: 9.5px; opacity: 0.7;">v2.1</span>
         </div>
-        <button type="button" class="anti-fab-menu-item" data-action="chat-width">
+
+        <button class="anti-fab-menu-item" data-action="trancy">
+          <div class="anti-fab-item-left">
+            <span>🌐</span>
+            <span>划词翻译</span>
+          </div>
+          <span class="anti-fab-badge ${state.trancyTranslateEnabled ? 'is-active' : ''}" id="anti-fab-trancy">${trancyLabel}</span>
+        </button>
+
+
+        <button class="anti-fab-menu-item" data-action="vocab">
+          <div class="anti-fab-item-left">
+            <span>📚</span>
+            <span>生词本</span>
+          </div>
+          <span class="anti-fab-badge" id="anti-fab-vocab-count">${TrancyVocabulary.getAll().length} 词</span>
+        </button>
+
+        <button class="anti-fab-menu-item" data-action="chat-width">
           <div class="anti-fab-item-left">
             <span>📐</span>
-            <span>页面宽度 (Alt+W)</span>
+            <span>对话区宽度</span>
           </div>
-          <span class="anti-fab-badge is-active" id="anti-fab-width">${WIDTH_MODES[state.widthMode]?.label.split(' ')[0] || '标准'}</span>
+          <span class="anti-fab-badge" id="anti-fab-width">${(WIDTH_MODES[state.widthMode] || WIDTH_MODES.standard).label.split(' ')[0]}</span>
         </button>
-        <button type="button" class="anti-fab-menu-item" data-action="send-mode">
+
+        <button class="anti-fab-menu-item" data-action="send-mode">
           <div class="anti-fab-item-left">
             <span>⌨️</span>
             <span>发送模式</span>
           </div>
           <span class="anti-fab-badge is-active" id="anti-fab-send-mode">${state.sendMode === 'ctrl-enter' ? 'Ctrl+Enter' : 'Enter'}</span>
         </button>
-        <button type="button" class="anti-fab-menu-item" data-action="quote">
+
+        <button class="anti-fab-menu-item" data-action="quote">
           <div class="anti-fab-item-left">
             <span>💬</span>
             <span>划词引用</span>
           </div>
           <span class="anti-fab-badge ${state.quoteReplyEnabled ? 'is-active' : ''}" id="anti-fab-quote">${state.quoteReplyEnabled ? '开' : '关'}</span>
         </button>
-        <button type="button" class="anti-fab-menu-item" data-action="formula">
+
+        <button class="anti-fab-menu-item" data-action="formula">
           <div class="anti-fab-item-left">
             <span>📐</span>
             <span>公式复制</span>
@@ -360,33 +709,22 @@
     const trigger = container.querySelector('.anti-fab-trigger');
     const menu = container.querySelector('.anti-fab-menu');
 
-    // 菜单展开/收起
     let isMenuOpen = false;
     const toggleMenu = (open) => {
       isMenuOpen = typeof open === 'boolean' ? open : !isMenuOpen;
       if (isMenuOpen) {
         menu.classList.add('is-active');
+        const vocabBadge = document.getElementById('anti-fab-vocab-count');
+        if (vocabBadge) vocabBadge.textContent = TrancyVocabulary.getAll().length + ' 词';
       } else {
         menu.classList.remove('is-active');
       }
     };
 
-    // 拖拽逻辑
     let isDragging = false;
     let startX = 0, startY = 0;
     let initialX = 0, initialY = 0;
     let hasMoved = false;
-
-    // 恢复位置
-    try {
-      const savedPos = JSON.parse(localStorage.getItem('anti_enhance_fab_pos') || 'null');
-      if (savedPos && savedPos.right !== undefined && savedPos.bottom !== undefined) {
-        const safeRight = Math.max(16, Math.min(window.innerWidth - 56, savedPos.right));
-        const safeBottom = Math.max(16, Math.min(window.innerHeight - 56, savedPos.bottom));
-        container.style.right = `${safeRight}px`;
-        container.style.bottom = `${safeBottom}px`;
-      }
-    } catch {}
 
     trigger.addEventListener('pointerdown', (e) => {
       isDragging = true;
@@ -416,27 +754,49 @@
       if (!isDragging) return;
       isDragging = false;
       trigger.releasePointerCapture(e.pointerId);
-
-      if (hasMoved) {
-        const rect = container.getBoundingClientRect();
-        const pos = {
-          right: Math.max(16, Math.min(window.innerWidth - 56, window.innerWidth - rect.right)),
-          bottom: Math.max(16, Math.min(window.innerHeight - 56, window.innerHeight - rect.bottom))
-        };
-        localStorage.setItem('anti_enhance_fab_pos', JSON.stringify(pos));
-      } else {
+      if (!hasMoved) {
         toggleMenu();
       }
     });
 
-    // 菜单按钮交互
     menu.addEventListener('click', (e) => {
       const btn = e.target.closest('.anti-fab-menu-item');
       if (!btn) return;
       e.stopPropagation();
 
       const action = btn.dataset.action;
-      if (action === 'chat-width') {
+      if (action === 'trancy') {
+        // 循环切换：彻底关闭 -> Ctrl+划词模式 -> 全自动弹出模式 -> 彻底关闭
+        if (!state.trancyTranslateEnabled) {
+          state.trancyTranslateEnabled = true;
+          state.trancyTriggerMode = 'ctrl';
+        } else if (state.trancyTriggerMode === 'ctrl') {
+          state.trancyTriggerMode = 'auto';
+        } else {
+          state.trancyTranslateEnabled = false;
+          removeTrancyCard();
+        }
+
+        const b = document.getElementById('anti-fab-trancy');
+        if (b) {
+          let label = '关';
+          if (state.trancyTranslateEnabled) {
+            label = state.trancyTriggerMode === 'ctrl' ? 'Ctrl+划词' : '自动开';
+          }
+          b.textContent = label;
+          b.className = `anti-fab-badge ${state.trancyTranslateEnabled ? 'is-active' : ''}`;
+        }
+
+        let toastMsg = '已彻底关闭';
+        if (state.trancyTranslateEnabled) {
+          toastMsg = state.trancyTriggerMode === 'ctrl' ? '已开启 (按住 Ctrl 划选才翻译，日常选词不打扰)' : '已开启 (选中文本自动弹出)';
+        }
+        showToast('Trancy 划词翻译', toastMsg);
+
+      } else if (action === 'vocab') {
+        const count = TrancyVocabulary.getAll().length;
+        showToast('📚 生词本', `当前共收藏 ${count} 个词条，可在 VS Code 侧边栏打开完整面板`);
+      } else if (action === 'chat-width') {
         cycleChatWidth();
       } else if (action === 'send-mode') {
         state.sendMode = state.sendMode === 'ctrl-enter' ? 'enter' : 'ctrl-enter';
@@ -458,19 +818,30 @@
       }
     });
 
-    // 点击外部收起菜单
-    document.addEventListener('click', (e) => {
+    const onDocClick = (e) => {
       if (!container.contains(e.target)) {
         toggleMenu(false);
       }
-    });
+    };
+    document.addEventListener('click', onDocClick);
+    cleanups.push(() => document.removeEventListener('click', onDocClick));
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   // -------------------------------------------------------------
-  // 6. Bootstrap
+  // 9. 启动全套能力
   // -------------------------------------------------------------
   initFormulaCopy();
   initQuoteReply();
+  initTrancySelection();
   initKeyboardShortcuts();
   initFloatingBall();
 })();

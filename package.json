@@ -1,8 +1,8 @@
 {
   "name": "antigravity-enhancements",
-  "displayName": "Antigravity Web Enhancements",
-  "description": "专为 Google Antigravity Workspace 定制的全能增强套件：LaTeX公式点击复制、Mermaid图表交互渲染、划词引用回复、Ctrl+Enter发送切换、悬浮控制球。",
-  "version": "1.0.0",
+  "displayName": "Antigravity Trancy & Web Enhancements",
+  "description": "专为 Google Antigravity 打造的 Trancy 沉浸式翻译套件：划词翻译气泡、侧边栏生词本、LaTeX公式复制、Mermaid图表渲染。",
+  "version": "2.1.0",
   "publisher": "antigravity-dev",
   "engines": {
     "vscode": "^1.68.0"
@@ -18,15 +18,23 @@
     "commands": [
       {
         "command": "antiEnhance.toggle",
-        "title": "Anti Enhancements: 开启/关闭增强套件"
+        "title": "Anti: 开启/关闭增强套件"
       },
       {
         "command": "antiEnhance.reinject",
-        "title": "Anti Enhancements: 重新注入增强脚本 (热重载)"
+        "title": "Anti: 重新注入增强脚本 (热重载)"
       },
       {
-        "command": "antiEnhance.toggleSendMode",
-        "title": "Anti Enhancements: 切换发送模式 (Ctrl+Enter / Enter)"
+        "command": "antiEnhance.translateSelection",
+        "title": "Trancy: 划词翻译选区 (Alt+T)"
+      },
+      {
+        "command": "antiEnhance.openVocabulary",
+        "title": "Trancy: 打开生词本"
+      },
+      {
+        "command": "antiEnhance.exportVocabulary",
+        "title": "Trancy: 导出生词本 (Markdown/CSV)"
       }
     ],
     "configuration": {
@@ -71,8 +79,46 @@
           "default": "ctrl-enter",
           "scope": "window",
           "description": "消息发送快捷键模式 (ctrl-enter: Ctrl+Enter发送/Enter换行, enter: Enter发送/Shift+Enter换行)"
+        },
+        "antiEnhance.trancyTranslate": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "是否开启 Trancy 划词翻译气泡"
+        },
+        "antiEnhance.gatewayUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8000",
+          "scope": "window",
+          "description": "Gemini Web2API 统一网关地址 (用于极速 0 成本大模型翻译)"
         }
       }
+    },
+    "keybindings": [
+      {
+        "command": "antiEnhance.translateSelection",
+        "key": "alt+t",
+        "mac": "alt+t",
+        "when": "editorHasSelection"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "anti-trancy-sidebar",
+          "title": "Trancy 生词本",
+          "icon": "src/assets/icon-book.svg"
+        }
+      ]
+    },
+    "views": {
+      "anti-trancy-sidebar": [
+        {
+          "type": "webview",
+          "id": "antiEnhance.vocabularyView",
+          "name": "沉浸式生词本"
+        }
+      ]
     }
   },
   "dependencies": {

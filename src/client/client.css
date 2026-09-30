@@ -1,4 +1,4 @@
-﻿/* Antigravity Web Enhancements Client Styles */
+/* Antigravity Web Enhancements Client Styles */
 
 /* 0. 根容器防横向滚动与宽度响应式变量 */
 :root {
@@ -339,4 +339,182 @@ html, body {
 .anti-fab-badge.is-active {
   background: rgba(37, 99, 235, 0.3);
   color: #93C5FD;
+}
+/* ============================================================= */
+/* 6. Trancy 风格智能划词翻译悬浮卡片 (Selection Translation)    */
+/* ============================================================= */
+.trancy-card-container {
+  position: absolute;
+  z-index: 2147483645;
+  width: 330px;
+  max-width: calc(100vw - 32px);
+  background: rgba(22, 23, 27, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  box-shadow: 0 16px 38px -4px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 12px 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #F8FAFC;
+  opacity: 0;
+  transform: translateY(8px) scale(0.96);
+  pointer-events: none;
+  transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.trancy-card-container.is-visible {
+  opacity: 1 !important;
+  transform: translateY(0) scale(1) !important;
+  pointer-events: auto !important;
+}
+
+.trancy-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+}
+
+.trancy-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.trancy-word {
+  font-size: 15px;
+  font-weight: 700;
+  color: #60A5FA;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+}
+
+.trancy-phonetic {
+  font-size: 12px;
+  color: #94A3B8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.trancy-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.trancy-btn-action {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #94A3B8;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.trancy-btn-action:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #F8FAFC;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.trancy-btn-action.is-fav {
+  color: #FBBF24 !important;
+  background: rgba(251, 191, 36, 0.15) !important;
+  border-color: rgba(251, 191, 36, 0.4) !important;
+}
+
+.trancy-body {
+  font-size: 13px;
+  line-height: 1.45;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.trancy-trans-text {
+  font-size: 13.5px;
+  color: #F1F5F9;
+  font-weight: 500;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.trancy-explanation {
+  font-size: 12px;
+  color: #CBD5E1;
+  margin-bottom: 6px;
+}
+
+.trancy-examples {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  font-size: 11.5px;
+}
+
+.trancy-example-item {
+  margin-bottom: 4px;
+}
+
+.trancy-example-en {
+  color: #93C5FD;
+}
+
+.trancy-example-zh {
+  color: #94A3B8;
+}
+
+.trancy-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 10.5px;
+  color: #64748B;
+}
+
+.trancy-engine-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60A5FA;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* 骨架屏 Loading */
+.trancy-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.trancy-skeleton-line {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 75%);
+  background-size: 200% 100%;
+  animation: trancy-shimmer 1.2s infinite;
+}
+
+@keyframes trancy-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }

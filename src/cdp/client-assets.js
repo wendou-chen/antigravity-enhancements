@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 
 function getClientInjectionScript() {
@@ -25,11 +25,11 @@ function getClientInjectionScript() {
     var existingStyle = document.getElementById('anti-enhancements-style');
     if (!existingStyle) {
       var style = document.createElement('style');
-      style.id = 'anti-enhancements-style';
+      style.id = 'anti-enhancements-style'; style.setAttribute('data-version', '2.1.0');
       style.textContent = ${JSON.stringify(css)};
       (document.head || document.documentElement).appendChild(style);
     } else {
-      existingStyle.textContent = ${JSON.stringify(css)};
+      existingStyle.setAttribute('data-version', '2.1.0'); existingStyle.textContent = ${JSON.stringify(css)};
     }
 
     // 2. Inject Client Script
