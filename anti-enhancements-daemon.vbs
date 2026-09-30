@@ -17,5 +17,5 @@ If Not fso.FileExists(nodePath) Then
   nodePath = "node.exe"
 End If
 
-cmdLine = """" & nodePath & """ """ & daemonScript & """"
+cmdLine = "cmd.exe /c """"" & nodePath & """ """ & daemonScript & """ > nul 2>&1"""
 WshShell.Run cmdLine, 0, False

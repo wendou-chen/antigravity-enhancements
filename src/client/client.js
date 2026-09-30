@@ -6,13 +6,13 @@
 (function () {
   // 0. 全局单例权威状态锁（确保无论注入多少次、旧闭包如何残留，全部以全局状态为准）
   window.__TRANCY_GLOBAL_CONFIG__ = window.__TRANCY_GLOBAL_CONFIG__ || {
-    enabled: localStorage.getItem('anti_trancy_enabled') === 'true', // 默认彻底关闭
-    triggerMode: localStorage.getItem('anti_trancy_trigger_mode') || 'ctrl' // 'ctrl' | 'auto'
+    enabled: localStorage.getItem('anti_trancy_enabled') !== 'false', // 默认开启
+    triggerMode: localStorage.getItem('anti_trancy_trigger_mode') || 'auto' // 默认 'auto' 选词即译 (支持 'auto' | 'bubble' | 'ctrl')
   };
 
   // 清理旧版本挂载的 DOM
   try {
-    document.querySelectorAll('.anti-fab-container, .anti-quote-toolbar, .trancy-card-container, .trancy-voice-overlay, .anti-input-mic-btn').forEach(el => el.remove());
+    document.querySelectorAll('.anti-fab-container, .anti-quote-toolbar, .trancy-card-container, .trancy-bubble-trigger, .trancy-voice-overlay, .anti-input-mic-btn').forEach(el => el.remove());
   } catch(e) {}
 
   if (window.__ANTI_ENHANCEMENTS_CLEANUP__) {
@@ -310,36 +310,167 @@
   // 3. Trancy 划词智能悬浮卡片 (Selection Translator)
   // -------------------------------------------------------------
   let currentCard = null;
+  let currentBubble = null;
 
   function removeTrancyCard() {
-    document.querySelectorAll('.trancy-card-container').forEach(el => el.remove());
+    document.querySelectorAll('.trancy-card-container, .trancy-bubble-trigger').forEach(el => el.remove());
     currentCard = null;
+    currentBubble = null;
+  }
+
+  function calculateSafeViewportPosition(rect, cardWidth, cardHeight, mouseEvent) {
+    let top = 0;
+    let left = 0;
+
+    const hasValidRect = rect && typeof rect.top === 'number' && !isNaN(rect.top) && rect.width > 0 && rect.height > 0 && rect.top > -100 && rect.bottom < window.innerHeight + 100;
+
+    if (hasValidRect) {
+      top = rect.bottom + 8;
+      left = rect.left + (rect.width / 2) - (cardWidth / 2);
+
+      // 如果下方超出屏幕，翻转到选区上方
+      if (top + cardHeight > window.innerHeight - 16) {
+        const topCandidate = rect.top - cardHeight - 8;
+        if (topCandidate >= 16) {
+          top = topCandidate;
+        }
+      }
+    } else if (mouseEvent && typeof mouseEvent.clientY === 'number') {
+      top = mouseEvent.clientY + 12;
+      left = mouseEvent.clientX - (cardWidth / 2);
+    } else {
+      top = Math.max(16, (window.innerHeight - cardHeight) / 2);
+      left = Math.max(16, (window.innerWidth - cardWidth) / 2);
+    }
+
+    // 强行安全边界钳制（绝对杜绝负数和超出屏幕右侧/底部）
+    left = Math.max(16, Math.min(window.innerWidth - cardWidth - 16, left));
+    top = Math.max(16, Math.min(window.innerHeight - cardHeight - 16, top));
+
+    return { top, left };
+  }
+
+  async function renderTrancyCard(text, rect, mouseEvent) {
+    removeTrancyCard();
+
+    const card = document.createElement('div');
+    card.className = 'trancy-card-container is-visible';
+
+    const cardWidth = 330;
+    const cardHeight = 260;
+    const pos = calculateSafeViewportPosition(rect, cardWidth, cardHeight, mouseEvent);
+
+    card.style.top = `${pos.top}px`;
+    card.style.left = `${pos.left}px`;
+
+    const isFav = TrancyVocabulary.has(text);
+
+    card.innerHTML = `
+      <div class="trancy-header">
+        <div class="trancy-title-wrap">
+          <span class="trancy-word" title="${escapeHtml(text)}">${escapeHtml(text)}</span>
+          <span class="trancy-phonetic" id="trancy-card-phonetic"></span>
+        </div>
+        <div class="trancy-header-actions">
+          <button class="trancy-btn-action" id="trancy-btn-tts" title="朗读发音">🔊</button>
+          <button class="trancy-btn-action ${isFav ? 'is-fav' : ''}" id="trancy-btn-fav" title="加入生词本">★</button>
+        </div>
+      </div>
+      <div class="trancy-body" id="trancy-card-body">
+        <div class="trancy-skeleton">
+          <div class="trancy-skeleton-line" style="width: 85%;"></div>
+          <div class="trancy-skeleton-line" style="width: 60%;"></div>
+          <div class="trancy-skeleton-line" style="width: 75%;"></div>
+        </div>
+      </div>
+      <div class="trancy-footer">
+        <span class="trancy-engine-tag" id="trancy-card-engine">⚡ 查询中...</span>
+        <span>Antigravity 沉浸翻译</span>
+      </div>
+    `;
+
+    document.body.appendChild(card);
+    currentCard = card;
+
+    card.querySelector('#trancy-btn-tts').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      playTts(text);
+    });
+
+    let currentResult = null;
+
+    const favBtn = card.querySelector('#trancy-btn-fav');
+    favBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (TrancyVocabulary.has(text)) {
+        TrancyVocabulary.remove(text);
+        favBtn.classList.remove('is-fav');
+        showToast('已移出生词本', text);
+      } else {
+        TrancyVocabulary.add(currentResult || { word: text, translation: '' });
+        favBtn.classList.add('is-fav');
+        showToast('★ 已加入生词本', text);
+      }
+    });
+
+    const result = await TrancyEngine.query(text);
+    if (currentCard !== card) return;
+
+    currentResult = result;
+    const phoneticEl = card.querySelector('#trancy-card-phonetic');
+    if (phoneticEl && result.phonetic) {
+      phoneticEl.textContent = result.phonetic;
+    }
+
+    const engineEl = card.querySelector('#trancy-card-engine');
+    if (engineEl && result.source) {
+      engineEl.textContent = '⚡ ' + result.source;
+    }
+
+    const bodyEl = card.querySelector('#trancy-card-body');
+    if (bodyEl) {
+      let bodyHtml = `<div class="trancy-trans-text">${escapeHtml(result.translation)}</div>`;
+      if (result.explanation) {
+        bodyHtml += `<div class="trancy-explanation">${escapeHtml(result.explanation)}</div>`;
+      }
+      if (result.examples && result.examples.length > 0) {
+        bodyHtml += '<div class="trancy-examples">';
+        result.examples.forEach(ex => {
+          bodyHtml += `
+            <div class="trancy-example-item">
+              <div class="trancy-example-en">💡 ${escapeHtml(ex.en)}</div>
+              <div class="trancy-example-zh">${escapeHtml(ex.zh)}</div>
+            </div>
+          `;
+        });
+        bodyHtml += '</div>';
+      }
+      bodyEl.innerHTML = bodyHtml;
+    }
   }
 
   function initTrancySelection() {
     const onMouseUp = (e) => {
-      // 核心开关守卫：如果全局未开启，坚决不响应任何划词
+      // 点击自身或菜单不触发重绘
+      if (e.target && e.target.closest && e.target.closest('.trancy-card-container, .anti-fab-container, .trancy-bubble-trigger, .anti-quote-toolbar')) {
+        return;
+      }
+
+      // 开关状态守卫
       if (!window.__TRANCY_GLOBAL_CONFIG__ || !window.__TRANCY_GLOBAL_CONFIG__.enabled) {
         removeTrancyCard();
         return;
       }
 
-      // 如果是 Ctrl 模式，但用户没有按住 Ctrl/Cmd 键，坚决不打扰
-      if (window.__TRANCY_GLOBAL_CONFIG__.triggerMode === 'ctrl' && !e.ctrlKey && !e.metaKey) {
+      const mode = window.__TRANCY_GLOBAL_CONFIG__.triggerMode || 'auto';
+
+      // 如果当前是 ctrl 模式，但用户没有按住 Ctrl，不触发
+      if (mode === 'ctrl' && !e.ctrlKey && !e.metaKey) {
         removeTrancyCard();
         return;
       }
 
-      if (e.target && e.target.closest && e.target.closest('.trancy-card-container, .anti-fab-container, .anti-input-mic-btn, .trancy-voice-overlay')) {
-        return;
-      }
-
-      setTimeout(async () => {
-        if (!window.__TRANCY_GLOBAL_CONFIG__ || !window.__TRANCY_GLOBAL_CONFIG__.enabled) {
-          removeTrancyCard();
-          return;
-        }
-
+      setTimeout(() => {
         const sel = window.getSelection();
         const text = sel ? sel.toString().trim() : '';
 
@@ -348,7 +479,11 @@
           return;
         }
 
-        if (e.target && ['INPUT', 'TEXTAREA'].includes(e.target.tagName) && e.target.closest && e.target.closest('.group\\/user-input-step')) {
+        // 输入框内正常编辑打字时不弹卡片打扰
+        if (e.target && ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
+          return;
+        }
+        if (e.target && (e.target.isContentEditable || (e.target.closest && e.target.closest('[contenteditable="true"]')))) {
           return;
         }
 
@@ -356,115 +491,38 @@
         const range = sel.getRangeAt(0);
         const rect = range.getBoundingClientRect();
 
-        if (rect.width === 0 && rect.height === 0) {
+        if (mode === 'bubble') {
+          // 气泡模式：在光标旁显示优雅的小 🌐 图标，点击展开卡片
           removeTrancyCard();
-          return;
-        }
+          const bubble = document.createElement('div');
+          bubble.className = 'trancy-bubble-trigger';
+          bubble.title = '点击翻译选中文本';
+          bubble.innerHTML = '🌐';
 
-        removeTrancyCard();
+          const bubblePos = calculateSafeViewportPosition(rect, 28, 28, e);
+          const rightX = (rect && rect.right > 0) ? rect.right + 6 : bubblePos.left;
+          bubble.style.top = `${bubblePos.top}px`;
+          bubble.style.left = `${Math.min(window.innerWidth - 36, rightX)}px`;
 
-        const card = document.createElement('div');
-        card.className = 'trancy-card-container is-visible';
+          bubble.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            renderTrancyCard(text, rect, e);
+          });
 
-        const scrollX = window.scrollX || window.pageXOffset || 0;
-        const scrollY = window.scrollY || window.pageYOffset || 0;
-        let top = rect.bottom + scrollY + 8;
-        let left = rect.left + scrollX + (rect.width / 2) - 165;
-
-        if (left < 16) left = 16;
-        if (left + 330 > window.innerWidth - 16) left = window.innerWidth - 346;
-        if (top + 260 > window.innerHeight + scrollY) {
-          top = Math.max(16, rect.top + scrollY - 240);
-        }
-
-        card.style.top = `${top}px`;
-        card.style.left = `${left}px`;
-
-        const isFav = TrancyVocabulary.has(text);
-
-        card.innerHTML = `
-          <div class="trancy-header">
-            <div class="trancy-title-wrap">
-              <span class="trancy-word" title="${escapeHtml(text)}">${escapeHtml(text)}</span>
-              <span class="trancy-phonetic" id="trancy-card-phonetic"></span>
-            </div>
-            <div class="trancy-header-actions">
-              <button class="trancy-btn-action" id="trancy-btn-tts" title="朗读发音">🔊</button>
-              <button class="trancy-btn-action ${isFav ? 'is-fav' : ''}" id="trancy-btn-fav" title="加入生词本">★</button>
-            </div>
-          </div>
-          <div class="trancy-body" id="trancy-card-body">
-            <div class="trancy-skeleton">
-              <div class="trancy-skeleton-line" style="width: 85%;"></div>
-              <div class="trancy-skeleton-line" style="width: 60%;"></div>
-              <div class="trancy-skeleton-line" style="width: 75%;"></div>
-            </div>
-          </div>
-          <div class="trancy-footer">
-            <span class="trancy-engine-tag" id="trancy-card-engine">⚡ Trancy 引擎</span>
-            <span>Antigravity 沉浸翻译</span>
-          </div>
-        `;
-
-        document.body.appendChild(card);
-        currentCard = card;
-
-        card.querySelector('#trancy-btn-tts').addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          playTts(text);
-        });
-
-        let currentResult = null;
-
-        const favBtn = card.querySelector('#trancy-btn-fav');
-        favBtn.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          if (TrancyVocabulary.has(text)) {
-            TrancyVocabulary.remove(text);
-            favBtn.classList.remove('is-fav');
-            showToast('已移出生词本', text);
-          } else {
-            TrancyVocabulary.add(currentResult || { word: text, translation: '' });
-            favBtn.classList.add('is-fav');
-            showToast('★ 已加入生词本', text);
-          }
-        });
-
-        const result = await TrancyEngine.query(text);
-        if (currentCard !== card) return;
-
-        currentResult = result;
-        const phoneticEl = card.querySelector('#trancy-card-phonetic');
-        if (phoneticEl && result.phonetic) {
-          phoneticEl.textContent = result.phonetic;
-        }
-
-        const engineEl = card.querySelector('#trancy-card-engine');
-        if (engineEl && result.source) {
-          engineEl.textContent = '⚡ ' + result.source;
-        }
-
-        const bodyEl = card.querySelector('#trancy-card-body');
-        if (bodyEl) {
-          let bodyHtml = `<div class="trancy-trans-text">${escapeHtml(result.translation)}</div>`;
-          if (result.explanation) {
-            bodyHtml += `<div class="trancy-explanation">${escapeHtml(result.explanation)}</div>`;
-          }
-          if (result.examples && result.examples.length > 0) {
-            bodyHtml += '<div class="trancy-examples">';
-            result.examples.forEach(ex => {
-              bodyHtml += `
-                <div class="trancy-example-item">
-                  <div class="trancy-example-en">💡 ${escapeHtml(ex.en)}</div>
-                  <div class="trancy-example-zh">${escapeHtml(ex.zh)}</div>
-                </div>
-              `;
-            });
-            bodyHtml += '</div>';
-          }
-          bodyEl.innerHTML = bodyHtml;
+          document.body.appendChild(bubble);
+          currentBubble = bubble;
+        } else {
+          // auto 或 ctrl 模式：直接展开翻译卡片
+          renderTrancyCard(text, rect, e);
         }
       }, 30);
+    };
+
+    const onMouseDown = (e) => {
+      if (e.target && e.target.closest && e.target.closest('.trancy-card-container, .anti-fab-container, .trancy-bubble-trigger')) {
+        return;
+      }
+      removeTrancyCard();
     };
 
     const onKeyDown = (e) => {
@@ -474,9 +532,11 @@
     };
 
     document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('keydown', onKeyDown);
     cleanups.push(() => {
       document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('keydown', onKeyDown);
     });
   }
@@ -698,7 +758,9 @@
 
     let trancyLabel = '关';
     if (state.trancyTranslateEnabled) {
-      trancyLabel = state.trancyTriggerMode === 'ctrl' ? 'Ctrl+划词' : '自动开';
+      if (state.trancyTriggerMode === 'bubble') trancyLabel = '气泡开';
+      else if (state.trancyTriggerMode === 'ctrl') trancyLabel = 'Ctrl+划词';
+      else trancyLabel = '自动开';
     }
 
     container.innerHTML = `
@@ -708,7 +770,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7;">v2.1.1</span>
+          <span style="font-size: 9.5px; opacity: 0.7;">v2.2.0</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="trancy">
@@ -824,12 +886,14 @@
 
       const action = btn.dataset.action;
       if (action === 'trancy') {
-        // 循环切换：彻底关闭 -> Ctrl+划词模式 -> 全自动弹出模式 -> 彻底关闭
+        // 循环切换：自动开 -> 气泡开 -> Ctrl+划词 -> 彻底关闭 -> 自动开
         if (!state.trancyTranslateEnabled) {
           state.trancyTranslateEnabled = true;
-          state.trancyTriggerMode = 'ctrl';
-        } else if (state.trancyTriggerMode === 'ctrl') {
           state.trancyTriggerMode = 'auto';
+        } else if (state.trancyTriggerMode === 'auto') {
+          state.trancyTriggerMode = 'bubble';
+        } else if (state.trancyTriggerMode === 'bubble') {
+          state.trancyTriggerMode = 'ctrl';
         } else {
           state.trancyTranslateEnabled = false;
           removeTrancyCard();
@@ -839,7 +903,9 @@
         if (b) {
           let label = '关';
           if (state.trancyTranslateEnabled) {
-            label = state.trancyTriggerMode === 'ctrl' ? 'Ctrl+划词' : '自动开';
+            if (state.trancyTriggerMode === 'bubble') label = '气泡开';
+            else if (state.trancyTriggerMode === 'ctrl') label = 'Ctrl+划词';
+            else label = '自动开';
           }
           b.textContent = label;
           b.className = `anti-fab-badge ${state.trancyTranslateEnabled ? 'is-active' : ''}`;
@@ -847,7 +913,9 @@
 
         let toastMsg = '已彻底关闭';
         if (state.trancyTranslateEnabled) {
-          toastMsg = state.trancyTriggerMode === 'ctrl' ? '已开启 (按住 Ctrl 划选才翻译，日常选词不打扰)' : '已开启 (选中文本自动弹出)';
+          if (state.trancyTriggerMode === 'auto') toastMsg = '已开启 (选中文本自动弹出翻译大卡片)';
+          else if (state.trancyTriggerMode === 'bubble') toastMsg = '已开启 (选中文本显示 🌐 悬浮球，点击展开)';
+          else if (state.trancyTriggerMode === 'ctrl') toastMsg = '已开启 (按住 Ctrl 划选才弹出)';
         }
         showToast('Trancy 划词翻译', toastMsg);
 

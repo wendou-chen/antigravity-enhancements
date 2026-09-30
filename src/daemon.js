@@ -69,3 +69,7 @@ process.on('exit', () => {
 process.on('uncaughtException', (err) => {
   log(`[Daemon] Uncaught Exception: ${err.stack || err.message}`);
 });
+
+process.on('unhandledRejection', (reason) => {
+  log(`[Daemon] Unhandled Rejection: ${reason && (reason.stack || reason.message || reason)}`);
+});

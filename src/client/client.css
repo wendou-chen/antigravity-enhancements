@@ -343,8 +343,38 @@ html, body {
 /* ============================================================= */
 /* 6. Trancy 风格智能划词翻译悬浮卡片 (Selection Translation)    */
 /* ============================================================= */
+.trancy-bubble-trigger {
+  position: fixed;
+  z-index: 2147483645;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #2563EB;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+  user-select: none;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  animation: trancy-bubble-pop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.trancy-bubble-trigger:hover {
+  transform: scale(1.15);
+  background: #1D4ED8;
+}
+
+@keyframes trancy-bubble-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 .trancy-card-container {
-  position: absolute;
+  position: fixed;
   z-index: 2147483645;
   width: 330px;
   max-width: calc(100vw - 32px);
