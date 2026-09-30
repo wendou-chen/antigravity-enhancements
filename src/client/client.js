@@ -589,13 +589,22 @@
   }
 
   // -------------------------------------------------------------
-  // 7. 发送快捷键与全局监听
+  // 7. 发送快捷键与全局监听 (Alt+W 调宽, Alt+Shift+T 翻译, Ctrl+Enter 发送)
   // -------------------------------------------------------------
   function initKeyboardShortcuts() {
     const onKey = (e) => {
-      // Alt+Shift+T 快速开关划词翻译
+      // 1. Alt+W 快速切换页面宽度
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'w' || e.key === 'W' || e.code === 'KeyW')) {
+        e.preventDefault();
+        e.stopPropagation();
+        cycleChatWidth();
+        return;
+      }
+
+      // 2. Alt+Shift+T 快速开关划词翻译
       if (e.altKey && e.shiftKey && (e.key === 't' || e.key === 'T')) {
         e.preventDefault();
+        e.stopPropagation();
         state.trancyTranslateEnabled = !state.trancyTranslateEnabled;
         if (!state.trancyTranslateEnabled) {
           removeTrancyCard();
@@ -609,16 +618,65 @@
         return;
       }
 
-      const isTextarea = e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
-      if (!isTextarea) return;
+      // 3. 拦截输入框发送模式
+      const target = e.target;
+      if (!target) return;
+      const isInput = target.tagName === 'TEXTAREA' || target.isContentEditable || Boolean(target.closest && target.closest('[contenteditable="true"]'));
+      if (!isInput) return;
+
+      // 中文输入法合成状态不拦截
+      if (e.isComposing || e.keyCode === 229) return;
+
+      if (e.key !== 'Enter') return;
 
       if (state.sendMode === 'ctrl-enter') {
-        if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-          // Enter 换行
-        } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-          const sendBtn = document.querySelector('button[aria-label*="Send"], button[type="submit"], [class*="send-button"]');
-          if (sendBtn) {
-            e.preventDefault();
+        // 单按 Enter: 换行，阻止发送
+        if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+
+          if (target.isContentEditable || (target.closest && target.closest('[contenteditable="true"]'))) {
+            const host = target.closest('[contenteditable="true"]') || target;
+            const shiftEnterEvt = new KeyboardEvent('keydown', {
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              which: 13,
+              shiftKey: true,
+              bubbles: true,
+              cancelable: true,
+              composed: true
+            });
+            host.dispatchEvent(shiftEnterEvt);
+          } else if (target.tagName === 'TEXTAREA') {
+            const start = target.selectionStart;
+            const end = target.selectionEnd;
+            const val = target.value;
+            target.value = val.substring(0, start) + '\n' + val.substring(end);
+            target.selectionStart = target.selectionEnd = start + 1;
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          return;
+        }
+
+        // 按 Ctrl+Enter 或 Cmd+Enter: 发送
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+
+          const sendBtn = document.querySelector('button[data-testid="send-button"], button[aria-label="Send message"], button[aria-label*="Send" i], button[type="submit"]');
+          if (sendBtn && !sendBtn.disabled && sendBtn.getAttribute('aria-disabled') !== 'true') {
+            sendBtn.click();
+          }
+          return;
+        }
+      } else {
+        // enter 模式下，按 Ctrl+Enter 也允许发送
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          const sendBtn = document.querySelector('button[data-testid="send-button"], button[aria-label="Send message"], button[aria-label*="Send" i], button[type="submit"]');
+          if (sendBtn && !sendBtn.disabled && sendBtn.getAttribute('aria-disabled') !== 'true') {
             sendBtn.click();
           }
         }
@@ -650,7 +708,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7;">v2.1</span>
+          <span style="font-size: 9.5px; opacity: 0.7;">v2.1.1</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="trancy">
