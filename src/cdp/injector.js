@@ -34,11 +34,15 @@ class CDPInjector {
     this.pollTimer = null;
     this.activePort = null;
     this.injectingTargets = new Set();
+    this.lastLoopTime = Date.now();
+    this.lastTick = Date.now();
   }
 
   start() {
     if (this.isRunning) return;
     this.isRunning = true;
+    this.lastLoopTime = Date.now();
+    this.lastTick = Date.now();
     this.log('[CDP] Starting Antigravity Web Enhancements Injector...');
     this.loop();
   }
@@ -52,8 +56,31 @@ class CDPInjector {
     this.log('[CDP] Stopped Injector.');
   }
 
+  checkHealthAndRecover() {
+    const now = Date.now();
+    if (this.isRunning && (now - this.lastTick > 12000)) {
+      this.log(`[CDP] Watchdog detected loop inactive (${Math.round((now - this.lastTick) / 1000)}s gap). Force reviving loop...`);
+      if (this.pollTimer) {
+        clearTimeout(this.pollTimer);
+        this.pollTimer = null;
+      }
+      this.lastTick = now;
+      this.loop();
+      return false;
+    }
+    return true;
+  }
+
   async loop() {
     if (!this.isRunning) return;
+    const now = Date.now();
+    this.lastTick = now;
+
+    if (this.lastLoopTime && (now - this.lastLoopTime > 8000)) {
+      this.log(`[CDP] System resume/gap detected (${Math.round((now - this.lastLoopTime) / 1000)}s gap). Re-scanning targets immediately...`);
+    }
+    this.lastLoopTime = now;
+
     try {
       await this.scanAndInject();
     } catch (err) {
@@ -97,99 +124,150 @@ class CDPInjector {
 
   pingPort(port) {
     return new Promise((resolve) => {
-      const req = http.get(
-        { hostname: '127.0.0.1', port, path: '/json/version', timeout: 600 },
-        (res) => {
-          res.on('data', () => {});
-          res.on('end', () => resolve(true));
+      let settled = false;
+      const done = (val) => {
+        if (!settled) {
+          settled = true;
+          resolve(val);
         }
-      );
-      req.on('error', () => resolve(false));
-      req.on('timeout', () => {
-        req.destroy();
-        resolve(false);
-      });
+      };
+
+      try {
+        const req = http.get(
+          { hostname: '127.0.0.1', port, path: '/json/version', timeout: 800 },
+          (res) => {
+            res.on('data', () => {});
+            res.on('end', () => done(true));
+            res.on('error', () => done(false));
+          }
+        );
+        req.on('error', () => done(false));
+        req.on('timeout', () => {
+          try { req.destroy(); } catch {}
+          done(false);
+        });
+      } catch {
+        done(false);
+      }
     });
   }
 
   getTargets(port) {
     return new Promise((resolve) => {
-      const req = http.get(
-        { hostname: '127.0.0.1', port, path: '/json', timeout: 1200 },
-        (res) => {
-          let data = '';
-          res.on('data', (chunk) => (data += chunk));
-          res.on('end', () => {
-            try {
-              resolve(JSON.parse(data));
-            } catch {
-              resolve([]);
-            }
-          });
+      let settled = false;
+      const done = (val) => {
+        if (!settled) {
+          settled = true;
+          resolve(val);
         }
-      );
-      req.on('error', () => resolve([]));
-      req.on('timeout', () => {
-        req.destroy();
-        resolve([]);
-      });
+      };
+
+      try {
+        const req = http.get(
+          { hostname: '127.0.0.1', port, path: '/json', timeout: 1500 },
+          (res) => {
+            let data = '';
+            res.on('data', (chunk) => (data += chunk));
+            res.on('end', () => {
+              try {
+                done(JSON.parse(data));
+              } catch {
+                done([]);
+              }
+            });
+            res.on('error', () => done([]));
+          }
+        );
+        req.on('error', () => done([]));
+        req.on('timeout', () => {
+          try { req.destroy(); } catch {}
+          done([]);
+        });
+      } catch {
+        done([]);
+      }
     });
   }
 
   async scanAndInject() {
-    const port = await this.findActivePort();
-    if (!port) return;
+    const scanOperation = (async () => {
+      const port = await this.findActivePort();
+      if (!port) return;
 
-    const targets = await this.getTargets(port);
-    if (!Array.isArray(targets) || targets.length === 0) return;
+      const targets = await this.getTargets(port);
+      if (!Array.isArray(targets) || targets.length === 0) return;
 
-    const tasks = [];
-    for (const target of targets) {
-      if (!target.webSocketDebuggerUrl) continue;
-      const isPage = target.type === 'page' || target.type === 'webview';
-      if (!isPage) continue;
+      const tasks = [];
+      for (const target of targets) {
+        if (!target.webSocketDebuggerUrl) continue;
+        const isPage = target.type === 'page' || target.type === 'webview';
+        if (!isPage) continue;
 
-      if (this.injectingTargets.has(target.id)) continue;
+        if (this.injectingTargets.has(target.id)) continue;
 
-      this.injectingTargets.add(target.id);
-      const p = this.checkAndInjectTarget(target).finally(() => {
-        this.injectingTargets.delete(target.id);
-      });
-      tasks.push(p);
-    }
+        this.injectingTargets.add(target.id);
+        const p = this.checkAndInjectTarget(target).finally(() => {
+          this.injectingTargets.delete(target.id);
+        });
+        tasks.push(p);
+      }
 
-    await Promise.all(tasks);
+      await Promise.all(tasks);
+    })();
+
+    const timeoutGuard = new Promise((resolve) => setTimeout(resolve, 5000));
+    await Promise.race([scanOperation, timeoutGuard]);
   }
 
   checkAndInjectTarget(target) {
     return new Promise((resolve) => {
+      let settled = false;
+      let ws = null;
+      let timeout = null;
+
+      const done = (val) => {
+        if (!settled) {
+          settled = true;
+          if (timeout) {
+            clearTimeout(timeout);
+            timeout = null;
+          }
+          if (ws) {
+            try { ws.close(); } catch {}
+          }
+          resolve(val);
+        }
+      };
+
       if (!WebSocketClient) {
         this.log('[CDP] WebSocket client missing');
-        return resolve(false);
+        return done(false);
       }
 
       const wsUrl = target.webSocketDebuggerUrl;
-      let ws;
       try {
         ws = new WebSocketClient(wsUrl);
       } catch (e) {
         this.log(`[CDP] WS connect failed: ${e.message}`);
-        return resolve(false);
+        return done(false);
       }
 
-      let timeout = setTimeout(() => {
-        try { ws.close(); } catch {}
-        resolve(false);
+      timeout = setTimeout(() => {
+        done(false);
       }, 4000);
 
       const checkScript = `Boolean(document.getElementById('anti-enhancements-style') && document.getElementById('anti-enhancements-style').getAttribute('data-version') === '2.2.0' && document.querySelector('.anti-fab-container'))`;
 
       ws.on('open', () => {
-        ws.send(JSON.stringify({
-          id: 1,
-          method: 'Runtime.evaluate',
-          params: { expression: checkScript, returnByValue: true }
-        }));
+        try {
+          ws.send(JSON.stringify({
+            id: 1,
+            method: 'Runtime.evaluate',
+            params: { expression: checkScript, returnByValue: true }
+          }));
+        } catch {
+          done(false);
+        }
       });
 
       ws.on('message', (data) => {
@@ -211,27 +289,23 @@ class CDPInjector {
                 }
               }));
             } else {
-              clearTimeout(timeout);
-              try { ws.close(); } catch {}
-              resolve(true);
+              done(true);
             }
           } else if (res.id === 2) {
             this.log(`[CDP] Injection success: ${target.title || target.id}`);
-            clearTimeout(timeout);
-            try { ws.close(); } catch {}
-            resolve(true);
+            done(true);
           }
         } catch (e) {
-          clearTimeout(timeout);
-          try { ws.close(); } catch {}
-          resolve(false);
+          done(false);
         }
       });
 
-      ws.on('error', (err) => {
-        clearTimeout(timeout);
-        try { ws.close(); } catch {}
-        resolve(false);
+      ws.on('error', () => {
+        done(false);
+      });
+
+      ws.on('close', () => {
+        done(false);
       });
     });
   }

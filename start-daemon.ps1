@@ -12,9 +12,22 @@ if (Test-Path $pidFile) {
     }
 }
 
-Write-Host "[*] Starting Antigravity Enhancements Daemon in background..." -ForegroundColor Cyan
-Start-Process "wscript.exe" -ArgumentList "`"$vbsPath`""
-Start-Sleep -Milliseconds 800
+Write-Host "[*] Starting Antigravity Enhancements Daemon in background (Detached WMI)..." -ForegroundColor Cyan
+
+$wmiSuccess = $false
+try {
+    $cmd = 'wscript.exe "{0}"' -f $vbsPath
+    $res = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmd } -ErrorAction Stop
+    if ($res.ReturnValue -eq 0) {
+        $wmiSuccess = $true
+    }
+} catch {}
+
+if (-not $wmiSuccess) {
+    Start-Process "wscript.exe" -ArgumentList "`"$vbsPath`""
+}
+
+Start-Sleep -Milliseconds 1200
 
 if (Test-Path $pidFile) {
     $newPid = (Get-Content $pidFile -ErrorAction SilentlyContinue).Trim()

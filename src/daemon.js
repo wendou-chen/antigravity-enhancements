@@ -45,8 +45,18 @@ log(`[Daemon] Watching Antigravity DevToolsActivePort for auto-injection...`);
 const injector = new CDPInjector(log);
 injector.start();
 
+// 2. Active Heartbeat Watchdog: keeps event loop alive & recovers loop if frozen
+const heartbeatInterval = setInterval(() => {
+  try {
+    injector.checkHealthAndRecover();
+  } catch (err) {
+    log(`[Daemon] Watchdog check error: ${err.message}`);
+  }
+}, 5000);
+
 function cleanup() {
   log('[Daemon] Shutting down daemon...');
+  clearInterval(heartbeatInterval);
   injector.stop();
   try {
     if (fs.existsSync(PID_FILE)) {
@@ -56,9 +66,19 @@ function cleanup() {
   process.exit(0);
 }
 
-process.on('SIGINT', cleanup);
-process.on('SIGTERM', cleanup);
-process.on('exit', () => {
+process.on('SIGINT', () => {
+  log('[Daemon] Received SIGINT');
+  cleanup();
+});
+process.on('SIGTERM', () => {
+  log('[Daemon] Received SIGTERM');
+  cleanup();
+});
+process.on('beforeExit', (code) => {
+  log(`[Daemon] Process beforeExit event triggered (event loop empty) with code: ${code}`);
+});
+process.on('exit', (code) => {
+  log(`[Daemon] Process exit event triggered with code: ${code}`);
   try {
     if (fs.existsSync(PID_FILE)) {
       fs.unlinkSync(PID_FILE);

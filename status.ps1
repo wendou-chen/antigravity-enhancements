@@ -90,7 +90,22 @@ if ($port) {
     }
 }
 
-# 4. Recent Log Lines
+# 4. Auto-healing & Persistence Status
+$regVal = Get-ItemPropertyValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'AntigravityEnhancements' -ErrorAction SilentlyContinue
+if ($regVal) {
+    Write-Host "  HKCU Autorun Reg  : ENABLED (Logon & Reboot Guard)" -ForegroundColor Green
+} else {
+    Write-Host "  HKCU Autorun Reg  : NOT CONFIGURED" -ForegroundColor Yellow
+}
+
+$startupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) "Antigravity Enhancements.lnk"
+if (Test-Path $startupShortcut) {
+    Write-Host "  Startup Shortcut  : ENABLED (Startup Folder Fallback)" -ForegroundColor Green
+} else {
+    Write-Host "  Startup Shortcut  : NOT FOUND" -ForegroundColor Yellow
+}
+
+# 5. Recent Log Lines
 if (Test-Path $logFile) {
     Write-Host "`n--- Recent Daemon Logs ---" -ForegroundColor DarkGray
     Get-Content $logFile -Tail 5 -ErrorAction SilentlyContinue | ForEach-Object {
