@@ -436,6 +436,8 @@ html, body {
   font-size: 12px;
   color: #CBD5E1;
   margin-bottom: 6px;
+  white-space: pre-line;
+  line-height: 1.5;
 }
 
 .trancy-examples {

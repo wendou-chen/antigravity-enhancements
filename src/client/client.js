@@ -186,122 +186,195 @@
     }
   };
 
+  const _TRANSLATE_CACHE = new Map();
+
   const TrancyEngine = {
     async query(text) {
       const cleanText = text.trim();
-      const isSingleWord = !cleanText.includes(' ') && cleanText.length <= 40;
+      if (!cleanText) {
+        return { word: '', phonetic: '', translation: '', explanation: '', examples: [], source: '' };
+      }
+
+      // 0. 本地内存 LRU 极速缓存 (0ms 瞬间直出)
+      if (_TRANSLATE_CACHE.has(cleanText)) {
+        return _TRANSLATE_CACHE.get(cleanText);
+      }
+
+      // 单个单词判定（纯英文字母、连字符、无空格、长度 <= 45）
+      const isSingleWord = !cleanText.includes(' ') && cleanText.length <= 45 && /^[a-zA-Z\-'’]+$/.test(cleanText);
+
+      let result = null;
 
       if (isSingleWord) {
+        // 1. 首选：Trancy 官方原生权威词典引擎 (原汁原味音标 + 分词性释义 + 权威例句)
         try {
-          const res = await fetch('http://127.0.0.1:8000/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer sk-gemini'
-            },
-            body: JSON.stringify({
-              model: 'gemini-3.8-flash',
-              messages: [
-                {
-                  role: 'system',
-                  content: '你是一个专业的英语词典与翻译引擎。用户给出一个单词或短语，请直接返回 JSON：{"phonetic": "/音标/", "translation": "中文释义", "explanation": "简要解析", "examples": [{"en": "英文例句", "zh": "例句中文翻译"}]}'
-                },
-                {
-                  role: 'user',
-                  content: cleanText
-                }
-              ],
-              temperature: 0.1
-            }),
-            signal: AbortSignal.timeout(4500)
+          const trancyRes = await fetch(`https://api.trancy.org/1/dictionary?text=${encodeURIComponent(cleanText)}&target=en&native=zh-CN`, {
+            signal: AbortSignal.timeout(2200)
           });
+          if (trancyRes.ok) {
+            const json = await trancyRes.json();
+            if (json && json.data) {
+              const d = json.data;
 
-          if (res.ok) {
-            const data = await res.json();
-            const rawContent = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-            if (rawContent) {
-              const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-              if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-                return {
+              // 提取美音/英音音标
+              let phonetic = '';
+              if (Array.isArray(d.phonetics)) {
+                const usPh = d.phonetics.find(p => p.locale === 'us' && p.value && p.value[0]);
+                const ukPh = d.phonetics.find(p => p.locale === 'uk' && p.value && p.value[0]);
+                const targetPh = usPh || ukPh;
+                if (targetPh && targetPh.value && targetPh.value[0]) {
+                  phonetic = `/${targetPh.value[0].replace(/^\/|\/$/g, '')}/`;
+                }
+              }
+
+              // 提取主要翻译项
+              let translation = '';
+              if (Array.isArray(d.translation) && d.translation.length > 0) {
+                translation = d.translation.slice(0, 3).map(t => t.trans).join('；');
+              } else if (Array.isArray(d.explains) && d.explains.length > 0 && d.explains[0].terms) {
+                translation = d.explains[0].terms.slice(0, 3).join('；');
+              }
+
+              // 提取词性分类详细解析
+              let explanation = '';
+              if (Array.isArray(d.explains) && d.explains.length > 0) {
+                explanation = d.explains
+                  .filter(e => e.terms && e.terms.length > 0)
+                  .map(e => `${e.pos || ''} ${e.terms.slice(0, 5).join('，')}`.trim())
+                  .join('\n');
+              }
+
+              // 提取例句
+              let examples = [];
+              if (Array.isArray(d.sentences) && d.sentences.length > 0) {
+                examples = d.sentences.slice(0, 2).map(s => ({
+                  en: s.text || '',
+                  zh: s.trans || ''
+                }));
+              }
+
+              if (translation || explanation) {
+                result = {
                   word: cleanText,
-                  phonetic: parsed.phonetic || '',
-                  translation: parsed.translation || '',
-                  explanation: parsed.explanation || '',
-                  examples: parsed.examples || [],
-                  source: 'Gemini Web2API (Dict)'
+                  phonetic,
+                  translation: translation || cleanText,
+                  explanation,
+                  examples,
+                  source: 'Trancy 原生词典'
                 };
               }
             }
           }
         } catch (e) {}
+
+        // 2. 备选：有道原生词典建议引擎 (极速毫秒级直出)
+        if (!result) {
+          try {
+            const ydRes = await fetch(`https://dict.youdao.com/suggest?num=1&doctype=json&q=${encodeURIComponent(cleanText)}`, {
+              signal: AbortSignal.timeout(1800)
+            });
+            if (ydRes.ok) {
+              const ydData = await ydRes.json();
+              if (ydData && ydData.data && Array.isArray(ydData.data.entries) && ydData.data.entries[0]) {
+                const entry = ydData.data.entries[0];
+                result = {
+                  word: cleanText,
+                  phonetic: '',
+                  translation: entry.explain || cleanText,
+                  explanation: '',
+                  examples: [],
+                  source: '有道原生词典'
+                };
+              }
+            }
+          } catch (e) {}
+        }
       }
 
-      try {
-        const gtRes = await fetch('http://127.0.0.1:8000/v1beta/models/google-translate:generateContent?sl=auto&tl=zh-CN', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: cleanText }] }]
-          }),
-          signal: AbortSignal.timeout(3500)
-        });
+      // 3. 短语或句子，或者单词词典均未命中的情况：Google Translate 原生极速翻译
+      if (!result) {
+        try {
+          const gtRes = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&dt=bd&q=${encodeURIComponent(cleanText)}`, {
+            signal: AbortSignal.timeout(2500)
+          });
+          if (gtRes.ok) {
+            const data = await gtRes.json();
+            let transText = '';
+            if (Array.isArray(data) && Array.isArray(data[0])) {
+              transText = data[0].map(x => x[0]).join('');
+            }
 
-        if (gtRes.ok) {
-          const gtData = await gtRes.json();
-          const translated = gtData.candidates && gtData.candidates[0] && gtData.candidates[0].content && gtData.candidates[0].content.parts && gtData.candidates[0].content.parts[0] && gtData.candidates[0].content.parts[0].text;
-          if (translated) {
-            return {
-              word: cleanText,
-              phonetic: '',
-              translation: translated.trim(),
-              explanation: '',
-              examples: [],
-              source: 'Gemini Web2API (GT)'
-            };
+            let dictExplains = '';
+            if (Array.isArray(data[1])) {
+              dictExplains = data[1].map(posGroup => {
+                const pos = posGroup[0] || '';
+                const terms = Array.isArray(posGroup[1]) ? posGroup[1].slice(0, 4).join('，') : '';
+                return `${pos}. ${terms}`;
+              }).join('\n');
+            }
+
+            if (transText) {
+              result = {
+                word: cleanText,
+                phonetic: '',
+                translation: transText,
+                explanation: dictExplains,
+                examples: [],
+                source: 'Google 原生翻译'
+              };
+            }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
+      }
 
-      try {
-        const publicRes = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=${encodeURIComponent(cleanText)}`, {
-          signal: AbortSignal.timeout(3000)
-        });
-        if (publicRes.ok) {
-          const publicData = await publicRes.json();
-          if (Array.isArray(publicData) && Array.isArray(publicData[0])) {
-            const trans = publicData[0].map(x => x[0]).join('');
-            return {
-              word: cleanText,
-              phonetic: '',
-              translation: trans,
-              explanation: '',
-              examples: [],
-              source: 'Google Translate'
-            };
-          }
-        }
-      } catch (e) {}
+      // 4. 离线/异常保底
+      if (!result) {
+        result = {
+          word: cleanText,
+          phonetic: '',
+          translation: '查询服务暂时不可用，请检查网络连接',
+          explanation: '',
+          examples: [],
+          source: '离线'
+        };
+      }
 
-      return {
-        word: cleanText,
-        phonetic: '',
-        translation: '翻译服务暂时无法连接',
-        explanation: '',
-        examples: [],
-        source: 'Offline'
-      };
+      // 存入 LRU 缓存
+      if (_TRANSLATE_CACHE.size > 500) {
+        const firstKey = _TRANSLATE_CACHE.keys().next().value;
+        _TRANSLATE_CACHE.delete(firstKey);
+      }
+      _TRANSLATE_CACHE.set(cleanText, result);
+
+      return result;
     }
   };
+  window.__TRANCY_ENGINE__ = TrancyEngine;
 
   function playTts(text) {
     if (!text || typeof window === 'undefined') return;
+    const clean = text.trim();
+    if (/^[a-zA-Z\-'’]+$/.test(clean)) {
+      try {
+        const audio = new Audio(`https://dict.youdao.com/dictvoice?type=0&audio=${encodeURIComponent(clean)}`);
+        audio.play().catch(() => {
+          fallbackSpeech(clean);
+        });
+        return;
+      } catch (e) {}
+    }
+    fallbackSpeech(clean);
+  }
+
+  function fallbackSpeech(text) {
     if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = /^[\u4e00-\u9fa5]/.test(text) ? 'zh-CN' : 'en-US';
-      u.rate = 0.9;
-      window.speechSynthesis.speak(u);
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = /^[\u4e00-\u9fa5]/.test(text) ? 'zh-CN' : 'en-US';
+        u.rate = 0.95;
+        window.speechSynthesis.speak(u);
+      } catch (e) {}
     }
   }
 
