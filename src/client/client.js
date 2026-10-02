@@ -1,7 +1,7 @@
 /**
  * Antigravity Web Enhancements Client Payload
  * Injected into Antigravity Workspace DOM via Chrome DevTools Protocol
- * Features: LaTeX Copy, Mermaid Render, Quote Reply, Trancy Selection Translation, Vocabulary Favorites, Width Adjust
+ * Features: LaTeX Copy, Mermaid Render, Trancy Selection Translation, Vocabulary Favorites, Width Adjust
  */
 (function () {
   // 0. 全局单例权威状态锁（确保无论注入多少次、旧闭包如何残留，全部以全局状态为准）
@@ -51,7 +51,6 @@
   const state = {
     formulaCopyEnabled: true,
     mermaidEnabled: true,
-    quoteReplyEnabled: true,
     get trancyTranslateEnabled() { return window.__TRANCY_GLOBAL_CONFIG__.enabled; },
     set trancyTranslateEnabled(val) { window.__TRANCY_GLOBAL_CONFIG__.enabled = Boolean(val); localStorage.setItem('anti_trancy_enabled', val ? 'true' : 'false'); },
     get trancyTriggerMode() { return window.__TRANCY_GLOBAL_CONFIG__.triggerMode; },
@@ -452,7 +451,7 @@
   function initTrancySelection() {
     const onMouseUp = (e) => {
       // 点击自身或菜单不触发重绘
-      if (e.target && e.target.closest && e.target.closest('.trancy-card-container, .anti-fab-container, .trancy-bubble-trigger, .anti-quote-toolbar')) {
+      if (e.target && e.target.closest && e.target.closest('.trancy-card-container, .anti-fab-container, .trancy-bubble-trigger')) {
         return;
       }
 
@@ -583,73 +582,7 @@
   }
 
   // -------------------------------------------------------------
-  // 6. 划词引用快捷回复 (Quote Reply)
-  // -------------------------------------------------------------
-  function initQuoteReply() {
-    let quoteToolbar = null;
-
-    function getToolbar() {
-      if (quoteToolbar) return quoteToolbar;
-      quoteToolbar = document.createElement('div');
-      quoteToolbar.className = 'anti-quote-toolbar';
-      quoteToolbar.innerHTML = `
-        <button class="anti-quote-btn-reply" id="anti-btn-quote-reply">
-          <span>💬</span>
-          <span>引用回复</span>
-        </button>
-      `;
-      document.body.appendChild(quoteToolbar);
-
-      quoteToolbar.querySelector('#anti-btn-quote-reply').addEventListener('click', () => {
-        const sel = window.getSelection();
-        const text = sel ? sel.toString().trim() : '';
-        if (!text) return;
-
-        const input = document.querySelector('textarea, div[contenteditable="true"]');
-        if (input) {
-          const quoteStr = '> ' + text.split('\n').join('\n> ') + '\n\n';
-          input.focus();
-          if (input.tagName === 'TEXTAREA') {
-            input.value = quoteStr + input.value;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-          } else if (input.isContentEditable) {
-            document.execCommand('insertText', false, quoteStr);
-          }
-          showToast('已引用选中内容', text.slice(0, 30) + '...');
-        }
-        quoteToolbar.classList.remove('is-visible');
-      });
-
-      return quoteToolbar;
-    }
-
-    const onQuoteMouseUp = (e) => {
-      if (!state.quoteReplyEnabled) return;
-      if (e.target.closest && e.target.closest('.anti-quote-toolbar, .trancy-card-container, .anti-fab-container')) return;
-
-      setTimeout(() => {
-        const sel = window.getSelection();
-        const text = sel ? sel.toString().trim() : '';
-        if (text && text.length > 3) {
-          const tb = getToolbar();
-          const rect = sel.getRangeAt(0).getBoundingClientRect();
-          const scrollX = window.scrollX || window.pageXOffset || 0;
-          const scrollY = window.scrollY || window.pageYOffset || 0;
-          tb.style.top = `${rect.top + scrollY - 38}px`;
-          tb.style.left = `${rect.left + scrollX}px`;
-          tb.classList.add('is-visible');
-        } else if (quoteToolbar) {
-          quoteToolbar.classList.remove('is-visible');
-        }
-      }, 50);
-    };
-
-    document.addEventListener('mouseup', onQuoteMouseUp);
-    cleanups.push(() => document.removeEventListener('mouseup', onQuoteMouseUp));
-  }
-
-  // -------------------------------------------------------------
-  // 7. 发送快捷键与全局监听 (Alt+W 调宽, Alt+Shift+T 翻译, Ctrl+Enter 发送)
+  // 6. 发送快捷键与全局监听 (Alt+W 调宽, Alt+Shift+T 翻译, Ctrl+Enter 发送)
   // -------------------------------------------------------------
   function initKeyboardShortcuts() {
     const onKey = (e) => {
@@ -806,14 +739,6 @@
           <span class="anti-fab-badge is-active" id="anti-fab-send-mode">${state.sendMode === 'ctrl-enter' ? 'Ctrl+Enter' : 'Enter'}</span>
         </button>
 
-        <button class="anti-fab-menu-item" data-action="quote">
-          <div class="anti-fab-item-left">
-            <span>💬</span>
-            <span>划词引用</span>
-          </div>
-          <span class="anti-fab-badge ${state.quoteReplyEnabled ? 'is-active' : ''}" id="anti-fab-quote">${state.quoteReplyEnabled ? '开' : '关'}</span>
-        </button>
-
         <button class="anti-fab-menu-item" data-action="formula">
           <div class="anti-fab-item-left">
             <span>📐</span>
@@ -929,12 +854,6 @@
         localStorage.setItem('anti_enhance_send_mode', state.sendMode);
         document.getElementById('anti-fab-send-mode').textContent = state.sendMode === 'ctrl-enter' ? 'Ctrl+Enter' : 'Enter';
         showToast('发送模式已切换', state.sendMode === 'ctrl-enter' ? 'Ctrl+Enter 发送 / Enter 换行' : 'Enter 发送 / Shift+Enter 换行');
-      } else if (action === 'quote') {
-        state.quoteReplyEnabled = !state.quoteReplyEnabled;
-        const badge = document.getElementById('anti-fab-quote');
-        badge.textContent = state.quoteReplyEnabled ? '开' : '关';
-        badge.className = `anti-fab-badge ${state.quoteReplyEnabled ? 'is-active' : ''}`;
-        showToast('划词引用', state.quoteReplyEnabled ? '已开启' : '已关闭');
       } else if (action === 'formula') {
         state.formulaCopyEnabled = !state.formulaCopyEnabled;
         const badge = document.getElementById('anti-fab-formula');
@@ -966,7 +885,6 @@
   // 9. 启动全套能力
   // -------------------------------------------------------------
   initFormulaCopy();
-  initQuoteReply();
   initTrancySelection();
   initKeyboardShortcuts();
   initFloatingBall();
