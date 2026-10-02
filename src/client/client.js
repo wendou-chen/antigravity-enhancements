@@ -402,6 +402,64 @@
       _TRANSLATE_CACHE.set(cleanText, result);
 
       return result;
+    },
+
+    // 5. 上下文 AI 单词语境消歧（Trancy 原生彩色渐变项）
+    async queryContextExplain(word, sentence) {
+      const cleanWord = (word || '').trim();
+      const cleanSentence = (sentence || '').trim();
+      if (!cleanWord || !cleanSentence || cleanWord.length > 50) return null;
+
+      const cacheKey = `ctx:${cleanWord}::${cleanSentence.slice(0, 80)}`;
+      if (_TRANSLATE_CACHE.has(cacheKey)) {
+        return _TRANSLATE_CACHE.get(cacheKey);
+      }
+
+      // 请求本地 CPA 8317 极速网关 (Gemini 3.1 Flash-Lite)
+      try {
+        const prompt = `你是一个极简词典引擎。请根据上下文句子判断目标单词在语境中的词性和最准确的一个中文释义。\n上下文：${cleanSentence}\n目标单词：${cleanWord}\n输出严格遵循JSON格式（不要markdown标记，不要多余字符）：{"pos":"词性缩写如n./v./adj./web.","translation":"极简中文释义"}`;
+
+        const res = await fetch('http://127.0.0.1:8317/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer sk-soIl8VyFs9ZoDnUDH03Rlz6Pdoi5pgY3WCtxZy4f7dWR9YzIqcJSGj8ymftudx0G'
+          },
+          body: JSON.stringify({
+            model: 'gemini-3.1-flash-lite',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.1,
+            max_tokens: 60
+          }),
+          signal: AbortSignal.timeout(6000)
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const raw = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+          if (raw) {
+            const cleanJson = raw.replace(/```json|```/g, '').trim();
+            const match = cleanJson.match(/\{[\s\S]*\}/);
+            if (match) {
+              const parsed = JSON.parse(match[0]);
+              if (parsed && (parsed.translation || parsed.trans)) {
+                const item = {
+                  pos: parsed.pos || 'AI',
+                  translation: parsed.translation || parsed.trans
+                };
+                if (_TRANSLATE_CACHE.size > 500) {
+                  const firstKey = _TRANSLATE_CACHE.keys().next().value;
+                  _TRANSLATE_CACHE.delete(firstKey);
+                }
+                _TRANSLATE_CACHE.set(cacheKey, item);
+                return item;
+              }
+            }
+          }
+        }
+      } catch (e) {}
+
+      return null;
     }
   };
   window.__TRANCY_ENGINE__ = TrancyEngine;
@@ -488,7 +546,37 @@
     return { top, left };
   }
 
-  async function renderTrancyCard(text, rect, mouseEvent) {
+  function extractContextSentence(range, word) {
+    if (!range || !word) return '';
+    try {
+      let node = range.commonAncestorContainer;
+      let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      if (!el) return '';
+      const blockEl = el.closest('p, div, li, td, pre, code, .prose, [class*="message"], [class*="content"]') || el;
+      const full = (blockEl.innerText || blockEl.textContent || '').trim();
+      if (!full) return '';
+
+      const parts = full.split(/([。！？!?;\n\r]+)/);
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i] && parts[i].includes(word)) {
+          const s = parts[i].trim();
+          if (s.length >= 4) return s.slice(0, 160);
+        }
+      }
+
+      const idx = full.indexOf(word);
+      if (idx !== -1) {
+        const start = Math.max(0, idx - 45);
+        const end = Math.min(full.length, idx + word.length + 45);
+        return full.substring(start, end).trim();
+      }
+      return full.slice(0, 140);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  async function renderTrancyCard(text, rect, mouseEvent, contextSentence = '') {
     removeTrancyCard();
 
     const card = document.createElement('div');
@@ -502,6 +590,7 @@
     card.style.left = `${pos.left}px`;
 
     const isFav = TrancyVocabulary.has(text);
+    const isSingleWord = !text.includes(' ') && text.length <= 45;
 
     card.innerHTML = `
       <div class="trancy-header">
@@ -568,6 +657,18 @@
     const bodyEl = card.querySelector('#trancy-card-body');
     if (bodyEl) {
       let bodyHtml = `<div class="trancy-trans-text">${escapeHtml(result.translation)}</div>`;
+
+      // 如果选中的是单个单词且有上下文语境，预先插入 Trancy 原生同款 AI 语境消歧 Loading 框
+      if (isSingleWord && contextSentence) {
+        bodyHtml += `
+          <div class="trancy-ai-item" id="trancy-ai-context-box">
+            <span class="trancy-pos-ai loading">AI.</span>
+            <span class="trancy-ai-text">语境消歧中...</span>
+            <span class="trancy-ai-badge">✨ 上下文 AI</span>
+          </div>
+        `;
+      }
+
       if (result.explanation) {
         bodyHtml += `<div class="trancy-explanation">${escapeHtml(result.explanation)}</div>`;
       }
@@ -584,6 +685,27 @@
         bodyHtml += '</div>';
       }
       bodyEl.innerHTML = bodyHtml;
+
+      // 异步第二轨：获取 AI 上下文精准释义
+      if (isSingleWord && contextSentence) {
+        TrancyEngine.queryContextExplain(text, contextSentence).then((aiRes) => {
+          if (currentCard !== card) return;
+          const aiBox = card.querySelector('#trancy-ai-context-box');
+          if (!aiBox) return;
+          if (aiRes && aiRes.translation) {
+            aiBox.innerHTML = `
+              <span class="trancy-pos-ai">${escapeHtml(aiRes.pos || 'AI')}</span>
+              <span class="trancy-ai-text">${escapeHtml(aiRes.translation)}</span>
+              <span class="trancy-ai-badge">✨ 上下文释义</span>
+            `;
+          } else {
+            aiBox.remove();
+          }
+        }).catch(() => {
+          const aiBox = card.querySelector('#trancy-ai-context-box');
+          if (aiBox) aiBox.remove();
+        });
+      }
     }
   }
 
@@ -628,6 +750,7 @@
         if (!sel.rangeCount) return;
         const range = sel.getRangeAt(0);
         const rect = range.getBoundingClientRect();
+        const contextSentence = extractContextSentence(range, text);
 
         if (mode === 'bubble') {
           // 气泡模式：在光标旁显示优雅的小 🌐 图标，点击展开卡片
@@ -644,14 +767,14 @@
 
           bubble.addEventListener('click', (ev) => {
             ev.stopPropagation();
-            renderTrancyCard(text, rect, e);
+            renderTrancyCard(text, rect, e, contextSentence);
           });
 
           document.body.appendChild(bubble);
           currentBubble = bubble;
         } else {
           // auto 或 ctrl 模式：直接展开翻译卡片
-          renderTrancyCard(text, rect, e);
+          renderTrancyCard(text, rect, e, contextSentence);
         }
       }, 30);
     };
@@ -842,7 +965,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7;">v2.2.3</span>
+          <span style="font-size: 9.5px; opacity: 0.7;">v2.3.0</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="trancy">

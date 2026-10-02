@@ -500,3 +500,90 @@ html, body {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* 7. Trancy 原生同款 AI 语境消歧标签 (彩色渐变光晕边框) */
+.trancy-ai-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px 0;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  font-size: 12.5px;
+  animation: trancy-ai-fade-in 0.2s ease-out;
+}
+
+@keyframes trancy-ai-fade-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.trancy-ai-item .trancy-pos-ai {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #F8FAFC;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.trancy-ai-item .trancy-pos-ai::after {
+  --m-i: linear-gradient(#000, #000);
+  --m-o: content-box, padding-box;
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  padding: 1.5px;
+  border-radius: 6px;
+  background-image: conic-gradient(#488cfb, #29dbbc, #ddf505, #ff9f0e, #e440bb, #655adc, #488cfb);
+  box-sizing: border-box;
+  -webkit-mask-image: var(--m-i), var(--m-i);
+  mask-image: var(--m-i), var(--m-i);
+  -webkit-mask-origin: var(--m-o);
+  mask-origin: var(--m-o);
+  -webkit-mask-clip: var(--m-o);
+  mask-clip: var(--m-o);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  filter: hue-rotate(0deg);
+}
+
+.trancy-ai-item .trancy-pos-ai.loading::after {
+  animation: trancy-rotate-hue linear 1.2s infinite;
+}
+
+@keyframes trancy-rotate-hue {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+.trancy-ai-item .trancy-ai-text {
+  color: #38BDF8;
+  font-weight: 600;
+  font-size: 13px;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trancy-ai-item .trancy-ai-badge {
+  font-size: 10px;
+  color: #94A3B8;
+  opacity: 0.85;
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
