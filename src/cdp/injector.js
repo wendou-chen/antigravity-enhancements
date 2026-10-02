@@ -256,7 +256,7 @@ class CDPInjector {
         done(false);
       }, 4000);
 
-      const checkScript = `Boolean(document.getElementById('anti-enhancements-style') && document.getElementById('anti-enhancements-style').getAttribute('data-version') === '2.2.2' && document.querySelector('.anti-fab-container'))`;
+      const checkScript = `Boolean(document.getElementById('anti-enhancements-style') && document.getElementById('anti-enhancements-style').getAttribute('data-version') === '2.2.3' && document.querySelector('.anti-fab-container'))`;
 
       ws.on('open', () => {
         try {

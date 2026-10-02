@@ -4,10 +4,42 @@
  * Features: LaTeX Copy, Mermaid Render, Trancy Selection Translation, Vocabulary Favorites, Width Adjust
  */
 (function () {
+  // 安全存储封装（兼容 data: URL 等禁用 localStorage 的沙箱环境）
+  const _memoryStore = (typeof window !== 'undefined' && window.__ANTI_MEM_STORAGE__) || {};
+  if (typeof window !== 'undefined') window.__ANTI_MEM_STORAGE__ = _memoryStore;
+
+  const safeStorage = {
+    getItem(key) {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          return window.localStorage.getItem(key);
+        }
+      } catch (e) {}
+      return _memoryStore[key] !== undefined ? _memoryStore[key] : null;
+    },
+    setItem(key, value) {
+      const str = String(value);
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem(key, str);
+        }
+      } catch (e) {}
+      _memoryStore[key] = str;
+    },
+    removeItem(key) {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.removeItem(key);
+        }
+      } catch (e) {}
+      delete _memoryStore[key];
+    }
+  };
+
   // 0. 全局单例权威状态锁（确保无论注入多少次、旧闭包如何残留，全部以全局状态为准）
   window.__TRANCY_GLOBAL_CONFIG__ = window.__TRANCY_GLOBAL_CONFIG__ || {
-    enabled: localStorage.getItem('anti_trancy_enabled') !== 'false', // 默认开启
-    triggerMode: localStorage.getItem('anti_trancy_trigger_mode') || 'auto' // 默认 'auto' 选词即译 (支持 'auto' | 'bubble' | 'ctrl')
+    enabled: safeStorage.getItem('anti_trancy_enabled') !== 'false', // 默认开启
+    triggerMode: safeStorage.getItem('anti_trancy_trigger_mode') || 'auto' // 默认 'auto' 选词即译 (支持 'auto' | 'bubble' | 'ctrl')
   };
 
   // 清理旧版本挂载的 DOM
@@ -52,17 +84,17 @@
     formulaCopyEnabled: true,
     mermaidEnabled: true,
     get trancyTranslateEnabled() { return window.__TRANCY_GLOBAL_CONFIG__.enabled; },
-    set trancyTranslateEnabled(val) { window.__TRANCY_GLOBAL_CONFIG__.enabled = Boolean(val); localStorage.setItem('anti_trancy_enabled', val ? 'true' : 'false'); },
+    set trancyTranslateEnabled(val) { window.__TRANCY_GLOBAL_CONFIG__.enabled = Boolean(val); safeStorage.setItem('anti_trancy_enabled', val ? 'true' : 'false'); },
     get trancyTriggerMode() { return window.__TRANCY_GLOBAL_CONFIG__.triggerMode; },
-    set trancyTriggerMode(val) { window.__TRANCY_GLOBAL_CONFIG__.triggerMode = val; localStorage.setItem('anti_trancy_trigger_mode', val); },
-    sendMode: localStorage.getItem('anti_enhance_send_mode') || 'ctrl-enter',
-    widthMode: localStorage.getItem('anti_enhance_chat_width') || 'standard',
+    set trancyTriggerMode(val) { window.__TRANCY_GLOBAL_CONFIG__.triggerMode = val; safeStorage.setItem('anti_trancy_trigger_mode', val); },
+    sendMode: safeStorage.getItem('anti_enhance_send_mode') || 'ctrl-enter',
+    widthMode: safeStorage.getItem('anti_enhance_chat_width') || 'standard',
   };
 
   function applyChatWidth(modeKey, notify = false) {
     const mode = WIDTH_MODES[modeKey] || WIDTH_MODES.standard;
     state.widthMode = mode.key;
-    localStorage.setItem('anti_enhance_chat_width', mode.key);
+    safeStorage.setItem('anti_enhance_chat_width', mode.key);
     document.documentElement.style.setProperty('--anti-chat-max-width', mode.width);
 
     const badge = document.getElementById('anti-fab-width');
@@ -136,13 +168,13 @@
   const TrancyVocabulary = {
     getAll() {
       try {
-        return JSON.parse(localStorage.getItem('anti_trancy_vocabulary') || '[]');
+        return JSON.parse(safeStorage.getItem('anti_trancy_vocabulary') || '[]');
       } catch {
         return [];
       }
     },
     saveAll(list) {
-      localStorage.setItem('anti_trancy_vocabulary', JSON.stringify(list));
+      safeStorage.setItem('anti_trancy_vocabulary', JSON.stringify(list));
     },
     has(word) {
       if (!word) return false;
@@ -200,15 +232,24 @@
         return _TRANSLATE_CACHE.get(cleanText);
       }
 
-      // 单个单词判定（纯英文字母、连字符、无空格、长度 <= 45）
-      const isSingleWord = !cleanText.includes(' ') && cleanText.length <= 45 && /^[a-zA-Z\-'’]+$/.test(cleanText);
+      // 智能语言判断与方向适配
+      const isChinese = /[\u4e00-\u9fa5]/.test(cleanText);
+      const targetLang = isChinese ? 'zh-CN' : 'en';
+      const nativeLang = isChinese ? 'en' : 'zh-CN';
+      const gtSl = isChinese ? 'zh-CN' : 'auto';
+      const gtTl = isChinese ? 'en' : 'zh-CN';
+
+      // 单词/短词判定：英文单词或中文短词（≤12字符且无标点换行）
+      const isEnglishWord = !isChinese && !cleanText.includes(' ') && cleanText.length <= 45 && /^[a-zA-Z\-'’]+$/.test(cleanText);
+      const isChineseWord = isChinese && cleanText.length <= 12 && !/[\r\n。，！？；]/.test(cleanText);
+      const isDictEligible = isEnglishWord || isChineseWord;
 
       let result = null;
 
-      if (isSingleWord) {
-        // 1. 首选：Trancy 官方原生权威词典引擎 (原汁原味音标 + 分词性释义 + 权威例句)
+      if (isDictEligible) {
+        // 1. 首选：Trancy 官方原生权威词典引擎 (原汁原味音标/拼音 + 分词性释义 + 权威例句)
         try {
-          const trancyRes = await fetch(`https://api.trancy.org/1/dictionary?text=${encodeURIComponent(cleanText)}&target=en&native=zh-CN`, {
+          const trancyRes = await fetch(`https://api.trancy.org/1/dictionary?text=${encodeURIComponent(cleanText)}&target=${targetLang}&native=${nativeLang}`, {
             signal: AbortSignal.timeout(2200)
           });
           if (trancyRes.ok) {
@@ -216,31 +257,45 @@
             if (json && json.data) {
               const d = json.data;
 
-              // 提取美音/英音音标
+              // 提取音标（英文显示美音/英音，中文显示拼音）
               let phonetic = '';
               if (Array.isArray(d.phonetics)) {
-                const usPh = d.phonetics.find(p => p.locale === 'us' && p.value && p.value[0]);
-                const ukPh = d.phonetics.find(p => p.locale === 'uk' && p.value && p.value[0]);
-                const targetPh = usPh || ukPh;
-                if (targetPh && targetPh.value && targetPh.value[0]) {
-                  phonetic = `/${targetPh.value[0].replace(/^\/|\/$/g, '')}/`;
+                if (isChinese) {
+                  const p = d.phonetics.find(x => x.value && x.value[0]);
+                  if (p && p.value && p.value[0]) {
+                    phonetic = `[${p.value[0]}]`;
+                  }
+                } else {
+                  const usPh = d.phonetics.find(p => p.locale === 'us' && p.value && p.value[0]);
+                  const ukPh = d.phonetics.find(p => p.locale === 'uk' && p.value && p.value[0]);
+                  const targetPh = usPh || ukPh;
+                  if (targetPh && targetPh.value && targetPh.value[0]) {
+                    phonetic = `/${targetPh.value[0].replace(/^\/|\/$/g, '')}/`;
+                  }
                 }
               }
 
-              // 提取主要翻译项
+              // 提取核心翻译
               let translation = '';
               if (Array.isArray(d.translation) && d.translation.length > 0) {
                 translation = d.translation.slice(0, 3).map(t => t.trans).join('；');
               } else if (Array.isArray(d.explains) && d.explains.length > 0 && d.explains[0].terms) {
                 translation = d.explains[0].terms.slice(0, 3).join('；');
+              } else if (Array.isArray(d.dict) && d.dict.length > 0 && d.dict[0].terms) {
+                translation = d.dict[0].terms.slice(0, 3).join('；');
               }
 
-              // 提取词性分类详细解析
+              // 提取分词性详细解析（同时支持英文 explains 与中文 dict）
               let explanation = '';
               if (Array.isArray(d.explains) && d.explains.length > 0) {
                 explanation = d.explains
                   .filter(e => e.terms && e.terms.length > 0)
                   .map(e => `${e.pos || ''} ${e.terms.slice(0, 5).join('，')}`.trim())
+                  .join('\n');
+              } else if (Array.isArray(d.dict) && d.dict.length > 0) {
+                explanation = d.dict
+                  .filter(e => e.terms && e.terms.length > 0)
+                  .map(e => `${e.pos ? e.pos + ': ' : ''}${e.terms.slice(0, 5).join(', ')}`.trim())
                   .join('\n');
               }
 
@@ -267,7 +322,7 @@
           }
         } catch (e) {}
 
-        // 2. 备选：有道原生词典建议引擎 (极速毫秒级直出)
+        // 2. 备选：有道原生词典建议引擎 (中英双向秒回，纯字典毫秒级直出)
         if (!result) {
           try {
             const ydRes = await fetch(`https://dict.youdao.com/suggest?num=1&doctype=json&q=${encodeURIComponent(cleanText)}`, {
@@ -291,10 +346,10 @@
         }
       }
 
-      // 3. 短语或句子，或者单词词典均未命中的情况：Google Translate 原生极速翻译
+      // 3. 短语或句子，或者单词词典均未命中的情况：Google Translate 原生极速翻译 (动态中英双向)
       if (!result) {
         try {
-          const gtRes = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&dt=bd&q=${encodeURIComponent(cleanText)}`, {
+          const gtRes = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=${gtSl}&tl=${gtTl}&dt=t&dt=bd&q=${encodeURIComponent(cleanText)}`, {
             signal: AbortSignal.timeout(2500)
           });
           if (gtRes.ok) {
@@ -354,9 +409,20 @@
   function playTts(text) {
     if (!text || typeof window === 'undefined') return;
     const clean = text.trim();
+    // 英文单词真人发音
     if (/^[a-zA-Z\-'’]+$/.test(clean)) {
       try {
         const audio = new Audio(`https://dict.youdao.com/dictvoice?type=0&audio=${encodeURIComponent(clean)}`);
+        audio.play().catch(() => {
+          fallbackSpeech(clean);
+        });
+        return;
+      } catch (e) {}
+    }
+    // 中文词语真人发音
+    if (/[\u4e00-\u9fa5]/.test(clean)) {
+      try {
+        const audio = new Audio(`https://dict.youdao.com/dictvoice?le=zh&audio=${encodeURIComponent(clean)}`);
         audio.play().catch(() => {
           fallbackSpeech(clean);
         });
@@ -776,7 +842,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7;">v2.2.0</span>
+          <span style="font-size: 9.5px; opacity: 0.7;">v2.2.3</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="trancy">
@@ -924,7 +990,7 @@
         cycleChatWidth();
       } else if (action === 'send-mode') {
         state.sendMode = state.sendMode === 'ctrl-enter' ? 'enter' : 'ctrl-enter';
-        localStorage.setItem('anti_enhance_send_mode', state.sendMode);
+        safeStorage.setItem('anti_enhance_send_mode', state.sendMode);
         document.getElementById('anti-fab-send-mode').textContent = state.sendMode === 'ctrl-enter' ? 'Ctrl+Enter' : 'Enter';
         showToast('发送模式已切换', state.sendMode === 'ctrl-enter' ? 'Ctrl+Enter 发送 / Enter 换行' : 'Enter 发送 / Shift+Enter 换行');
       } else if (action === 'formula') {
