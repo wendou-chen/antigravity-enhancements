@@ -1,5 +1,18 @@
+param(
+    [Alias("t")]
+    [switch]$Test
+)
+
 # Check Antigravity Enhancements Status
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+if ($Test) {
+    $smokeScript = Join-Path $scriptDir "tests\smoke_test.js"
+    if (Test-Path $smokeScript) {
+        & node $smokeScript
+        exit $LASTEXITCODE
+    }
+}
 $pidFile = Join-Path $scriptDir "daemon.pid"
 $logFile = Join-Path $scriptDir "daemon.log"
 

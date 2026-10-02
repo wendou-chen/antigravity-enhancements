@@ -1,0 +1,136 @@
+# Trancy 核心协议与沉浸翻译技术逆向手册 (REVERSE_ENGINEERING.md)
+
+> 本文档固化了对 Trancy 官方 Chrome 扩展（版本 `7.9.3_0`，扩展 ID: `mjdbhokoopacimoekfgkcoogikbfgngb`）的完整逆向分析结论与技术规格，供 Antigravity Enhancements 及周边网关生态维护参考。
+
+---
+
+## 一、官方功能与数据流拓扑矩阵
+
+Trancy 客户端根据不同场景将请求分流到三类截然不同的服务通路中：
+
+```text
+Trancy 客户端请求路由拓扑
+│
+├── 1. 原生基础词典 (普通紫色 pos 标签: n. / web. / v.)
+│    ├── 请求类型: GET https://api.trancy.org/1/dictionary
+│    ├── 鉴权机制: 【免鉴权 / 开放接口】零 Cookie、零 Token 依赖
+│    ├── 响应时间: 100ms ~ 200ms
+│    └── 承载内容: 音标(phonetics)、分词性常规释义(explains/dict)、例句(examples)、词形变化(inflections)
+│
+├── 2. 单词语境 AI 消歧 (彩色光晕渐变 pos 标签: [n.] 支持者)
+│    ├── 请求类型: GET https://api.trancy.org/1/explain?target=...&word=...&sentence=...
+│    ├── 鉴权机制: 【Trancy 官方会员专属】强制要求登录态 Cookie/Token
+│    ├── 拦截表现: 未登录返回 HTTP 401 (Please login)；非会员返回 HTTP 403 (premium_required)
+│    └── 源码实锤: edreader-main.js:2116396 `if (!(user?.premium) && 403 === i) return uo.toggleSlider("/setting/premium");`
+│
+└── 3. 用户自建自定义 API (用户配置的 Gemini / OpenAI / 8000 网关)
+     ├── 请求协议: POST /v1/chat/completions 或 POST /v1beta/models/...:generateContent
+     └── 权限范围: 【严格受限】仅用于「网页整页沉浸式双语翻译」、「划长句/大段落翻译」与「YouTube 视频总结」
+                   Trancy 官方词典卡片中的上下文消歧从来不调用用户的自定义 API。
+```
+
+---
+
+## 二、Trancy 基础词典 (`/1/dictionary`) 逆向参数规格
+
+### 1. 语言方向参数规范
+- **英译中（划选英文）**：
+  ```http
+  GET https://api.trancy.org/1/dictionary?text=supporters&target=en&native=zh-CN
+  ```
+  - 音标位于 `data.phonetics`（`locale === 'us'` 或 `'uk'`）；
+  - 核心释义位于 `data.translation` 或 `data.explains[0].terms`；
+  - 分词性解析位于 `data.explains` 数组（包含 `pos` 与 `terms`）。
+
+- **中译英（划选中文字词，如「适应」）**：
+  ```http
+  GET https://api.trancy.org/1/dictionary?text=适应&target=zh-CN&native=en
+  ```
+  - 拼音位于 `data.phonetics`（`locale === 'default'`，如 `[shì yìng]`）；
+  - 核心英文位于 `data.dict` 或 `data.translation`；
+  - 分词性解析位于 `data.dict` 数组（例如 `verb: adapt, fit, suit / noun: adaptation`）。
+
+> ⚠️ **防踩坑守卫**：严禁中文字词请求时将参数写死为 `target=en&native=zh-CN`，否则服务端返回空或结构不匹配，导致客户端误判为接口离线。
+
+---
+
+## 三、Trancy 官方同款彩色渐变光晕样式规格
+
+Trancy 客户端对 AI 上下文消歧项采用了一套标志性的视觉语言，通过 CSS 遮罩技术实现：
+
+```css
+/* 1. 词性标签基础容器 */
+.pos.ai {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #F8FAFC;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+/* 2. 圆锥多色渐变与遮罩发光边框 (Trancy 核心资产) */
+.pos.ai::after {
+  --m-i: linear-gradient(#000, #000);
+  --m-o: content-box, padding-box;
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  padding: 1.5px;
+  border-radius: 6px;
+  background-image: conic-gradient(#488cfb, #29dbbc, #ddf505, #ff9f0e, #e440bb, #655adc, #488cfb);
+  box-sizing: border-box;
+  -webkit-mask-image: var(--m-i), var(--m-i);
+  mask-image: var(--m-i), var(--m-i);
+  -webkit-mask-origin: var(--m-o);
+  mask-origin: var(--m-o);
+  -webkit-mask-clip: var(--m-o);
+  mask-clip: var(--m-o);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  filter: hue-rotate(0deg);
+}
+
+/* 3. 异步分析中的流转光彩动效 */
+.pos.ai.loading::after {
+  animation: rotate-hue linear 1.2s infinite;
+}
+
+@keyframes rotate-hue {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+```
+
+---
+
+## 四、本地自建双轨渐进渲染方案 (Progressive Dual-Track)
+
+为摆脱 Trancy 官方对 `/1/explain` 施加的付费门槛，本套件在客户端实现了**双轨渐进直出引擎**：
+
+1. **第一轨 (0~100ms 瞬时直出)**：
+   - 划词时立即发起免鉴权 `/1/dictionary` 请求；
+   - 立即渲染词典面板与音标，释义区插入 Loading 态彩色边框占位符；
+2. **第二轨 (异步后台分析)**：
+   - 从 DOM 提取包含目标词的上下文句子（限制 160 字符）；
+   - 并发请求本地 CPA 网关（`http://127.0.0.1:8317/v1/chat/completions`，模型锁定为 `gemini-3.1-flash-lite` 0 元号池）；
+   - 提取严格 JSON：`{"pos":"n.","translation":"支持者"}`，平滑更新彩色占位框；
+   - 若超时（>6s）或网关未开启，占位框优雅静默移除，绝不破坏基础词典秒开体验。
+
+---
+
+## 五、沙箱与环境防御守卫 (Security Directives)
+
+1. **`data:` URL 与沙箱页面禁用 `localStorage` 守卫**：
+   - **事故根因**：Electron 启动阶段或特定 webview 处于 `data:text/html` 沙箱环境。直接调用 `window.localStorage` 会触发 Chromium 原生抛出 `SecurityError: Failed to read the 'localStorage' property from 'Window': Storage is disabled inside 'data:' URLs.`，导致后续所有注入脚本全部中断。
+   - **铁律防御**：所有存储读写统一经由 `safeStorage` 封装托管，在抛出异常时自动回退至 `window.__ANTI_MEM_STORAGE__` 内存对象，保证任意页面环境零崩溃。
