@@ -1,5 +1,26 @@
 # Antigravity Enhancements 更新与逆向日志 (CHANGELOG)
 
+## [v2.5.0] - 2026-10-03
+
+### 🌟 核心突破 (Trancy 官方真会员云端数据与生词本打通)
+- **Chrome 扩展 LevelDB 凭据提取与认证闭环**：
+  - 自动从本地 Chrome 用户数据（Profile 11 / Local Extension Settings / `mjdbhokoopacimoekfgkcoogikbfgngb`）的 LevelDB 存储中提取真实 Trancy JWT Token；
+  - 成功认证用户真实身份（用户：陈文斗，邮箱：`cwd20050626@gmail.com`，年费会员状态：`premium: true`）。
+- **Trancy 官方云端生词本双向同步 (`TrancyCloud`)**：
+  - **云端全量拉取 (`syncFromCloud`)**：接入 `GET /4/words?target=en&native=zh-CN&updatedAt=0` 接口，启动及手动点击时将官方云端所有已标星生词毫秒级合并至本地；
+  - **点击收藏双向同步 (`addWord`)**：划词卡片点击「⭐ 收藏」时，本地 0ms 高亮并持久化的同时，异步向 `POST /1/words` 发送请求，直接同步写入 Trancy 官方云端生词本；
+  - **取消收藏双向同步 (`removeWord`)**：再次点击取消标星时，异步向 `PATCH /1/words/<word>` 发送 `{ star: false }`，同步从 Trancy 官方生词本移除；
+  - **双重保险**：离线或官方网络超时时本地存储仍然完好，保证极端环境下零丢词。
+- **AI 语境消歧升级为「官方真会员优先 + 本地 CPA 兜底」双轨架构**：
+  - 语境消歧优先请求 Trancy 官方会员接口 `GET /1/explain?word=...&sentence=...`，享受原汁原味的官方高级大模型消歧；
+  - 当官方接口超时（>2.8s）或离线时，无缝平滑回退至本地 CPA 8317 端口（Gemini 3.1 Flash-Lite）保底，双重保障。
+- **FAB 控制面板与冒烟门禁升级**：
+  - FAB 面板顶部高亮显示 `v2.5.0 VIP` 专属标识；
+  - 生词本菜单项升级为「Trancy 云端生词本」，点击即可触发全量双向对齐；
+  - 自动化冒烟测试套件升格为 **8 级物理门禁**，实机验证云端个人档案拉取与双向生词对齐 100% PASS。
+
+---
+
 ## [v2.4.1] - 2026-10-03
 
 ### 🎨 交互减噪与静默直出 (Silent Plan Mode Toggle)

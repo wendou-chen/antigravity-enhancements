@@ -175,3 +175,35 @@ Trancy 客户端对 AI 上下文消歧项采用了一套标志性的视觉语言
   3. 检查后置兄弟 `children[i + 1]`（注意：DecoratorNode 无 `getNextSibling` 原型方法，必须通过数组索引查找），若为包含前导空格的文本节点，调用 `setTextContent(text.slice(1))` 清除前导空格；
   4. 调用 `node.remove()` 安全移除胶囊节点，恢复常规模式。
 
+---
+
+## 七、Trancy 官方真会员云端生词本与 AI 消歧协议逆向
+
+### 1. 凭据提取与认证架构
+- **存储位置**：Chrome 扩展使用 LevelDB 维护 `Local Extension Settings/mjdbhokoopacimoekfgkcoogikbfgngb`；
+- **核心数据项**：LevelDB 内部序列化对象中包含 `user` 字段，其中 `user.token` 即为 Trancy 核心 JWT 鉴权凭据；
+- **身份验证**：
+  - 端点：`GET https://api.trancy.org/1/user/profile`
+  - 请求头：`Authorization: Bearer <TOKEN>`
+  - 返回：`{ "data": { "name": "陈文斗", "email": "cwd20050626@gmail.com", "premium": true } }`，且每次请求会滚动续签最新 Token。
+
+### 2. 生词本官方云端协议规范
+- **全量拉取生词本**：
+  - 请求：`GET https://api.trancy.org/4/words?target=en&native=zh-CN&updatedAt=0`
+  - 返回：带有 `text`、`star: true`、`translation`、`phonetic` 的数组；
+- **添加/标星收藏生词**：
+  - 请求：`POST https://api.trancy.org/1/words`
+  - 请求体：`{ "text": "word", "target": "en", "native": "zh-CN", "star": true, "master": false }`
+  - 成功返回：HTTP 200 `{ "data": { "text": "word", "star": true }, "message": "ok" }`；
+- **取消收藏（去星）**：
+  - 请求：`PATCH https://api.trancy.org/1/words/<word>`
+  - 请求体：`{ "star": false, "target": "en", "native": "zh-CN" }`
+  - 成功返回：HTTP 200 `{ "data": { "star": false }, "message": "ok" }`。
+
+### 3. 会员原生 AI 上下文消歧接口
+- **官方端点**：`GET https://api.trancy.org/1/explain?word=<word>&sentence=<sentence>&target=en&native=zh-CN`；
+- **参数契约**：目标词参数必须为 `word`（非 `text`，传错报 409 `word: Required`）；
+- **鉴权约束**：未带会员 Bearer Token 会报 401/403；带有效会员 Token 毫秒级返回 `{ "data": { "pos": "n.", "translation": "释义" } }`；
+- **双轨容灾策略**：优先走官方会员接口，超时（>2.8s）或离线时平滑回退本地 CPA 8317 端口（Gemini 3.1 Flash-Lite）。
+
+

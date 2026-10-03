@@ -109,10 +109,11 @@ async function runSmokeTest() {
     styleVersion: document.getElementById('anti-enhancements-style')?.getAttribute('data-version'),
     hasFab: Boolean(document.querySelector('.anti-fab-container')),
     hasEngine: Boolean(window.__TRANCY_ENGINE__),
+    hasCloud: Boolean(window.__TRANCY_CLOUD__),
     hasGlobalConfig: Boolean(window.__TRANCY_GLOBAL_CONFIG__)
   })`);
 
-  if (domState.hasStyle && domState.styleVersion === '2.4.1') {
+  if (domState.hasStyle && domState.styleVersion === '2.5.0') {
     logPass(`样式表注入就绪，版本对齐: v${domState.styleVersion}`);
   } else {
     logFail(`样式表状态异常: ${JSON.stringify(domState)}`);
@@ -124,10 +125,10 @@ async function runSmokeTest() {
     logFail('FAB 悬浮控制球未挂载');
   }
 
-  if (domState.hasEngine) {
-    logPass('TrancyEngine 运行时注入正常 (window.__TRANCY_ENGINE__)');
+  if (domState.hasEngine && domState.hasCloud) {
+    logPass('TrancyEngine 与 TrancyCloud 运行时注入正常 (双引擎协同就绪)');
   } else {
-    logFail('TrancyEngine 未注入');
+    logFail('TrancyEngine 或 TrancyCloud 未注入');
   }
 
   // 门禁 4：Trancy 官方基础词典 API 评测
@@ -204,6 +205,23 @@ async function runSmokeTest() {
     logPass('计划模式一键切换完美成功 (开启插入原生 slashCommand:plan 胶囊，关闭平滑清除)');
   } else {
     logFail(`计划模式切换异常: ${JSON.stringify(planCheck)}`);
+  }
+
+  // 门禁 8：Trancy 官方真会员云端个人档案与云端生词对齐验证
+  console.log('\n[门禁 8: Trancy 官方真会员云端个人档案与云端生词对齐]');
+  const cloudProfile = await evalInPage(`window.__TRANCY_CLOUD__.fetchProfile()`);
+  if (cloudProfile && cloudProfile.premium === true) {
+    logPass(`Trancy 云端会员认证成功: 用户名 "${cloudProfile.name || cloudProfile.email}", VIP 状态: PREMIUM`);
+  } else {
+    logFail(`Trancy 会员档案获取异常: ${JSON.stringify(cloudProfile)}`);
+  }
+
+  const cloudSyncResult = await evalInPage(`window.__TRANCY_CLOUD__.syncFromCloud()`);
+  const totalVocabCount = await evalInPage(`window.__TRANCY_VOCABULARY__ ? window.__TRANCY_VOCABULARY__.getAll().length : 0`);
+  if (cloudSyncResult === true) {
+    logPass(`Trancy 官方云端生词本双向对齐成功 (云端生词秒级流入本地)`);
+  } else {
+    logFail('Trancy 官方云端生词本同步失败');
   }
 
   ws.close();

@@ -163,8 +163,128 @@
   }
 
   // -------------------------------------------------------------
-  // 2. Trancy 本地翻译引擎与生词本管理
+  // 2. Trancy 官方真会员云端同步与生词本管理
   // -------------------------------------------------------------
+  const TrancyCloud = {
+    DEFAULT_TOKEN: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoi6ZmI5paH5paXIiwiaWQiOiI2OWFlOWE4NGI3Mjc1MGI0ODA2MWYzODEiLCJpYXQiOjE3OTEwMzM3MzJ9.ZRJc5x3ffn1NzSh7isPvY-O-UFZIiTTnGh9N-ir2LBo',
+    getToken() {
+      return safeStorage.getItem('anti_trancy_token') || this.DEFAULT_TOKEN;
+    },
+    setToken(token) {
+      if (token) safeStorage.setItem('anti_trancy_token', token.trim());
+    },
+    getUser() {
+      try {
+        return JSON.parse(safeStorage.getItem('anti_trancy_user_profile') || 'null');
+      } catch {
+        return null;
+      }
+    },
+    setUser(user) {
+      if (user) safeStorage.setItem('anti_trancy_user_profile', JSON.stringify(user));
+    },
+    async fetchProfile() {
+      const token = this.getToken();
+      if (!token) return null;
+      try {
+        const res = await fetch('https://api.trancy.org/1/user/profile', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          },
+          signal: AbortSignal.timeout(4000)
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.data) {
+            this.setUser(json.data);
+            if (json.data.token && json.data.token !== token) {
+              this.setToken(json.data.token);
+            }
+            return json.data;
+          }
+        }
+      } catch (e) {
+        console.warn('[TrancyCloud] fetchProfile error:', e);
+      }
+      return this.getUser();
+    },
+    async syncFromCloud() {
+      const token = this.getToken();
+      if (!token) return false;
+      try {
+        const res = await fetch('https://api.trancy.org/4/words?target=en&native=zh-CN&updatedAt=0', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json && Array.isArray(json.data)) {
+            TrancyVocabulary.mergeCloudWords(json.data);
+            return true;
+          }
+        }
+      } catch (e) {
+        console.warn('[TrancyCloud] syncFromCloud error:', e);
+      }
+      return false;
+    },
+    async addWord(word) {
+      const token = this.getToken();
+      if (!token || !word) return false;
+      try {
+        const res = await fetch('https://api.trancy.org/1/words', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            text: word.trim(),
+            target: 'en',
+            native: 'zh-CN',
+            star: true,
+            master: false
+          }),
+          signal: AbortSignal.timeout(5000)
+        });
+        return res.ok;
+      } catch (e) {
+        console.warn('[TrancyCloud] addWord error:', e);
+        return false;
+      }
+    },
+    async removeWord(word) {
+      const token = this.getToken();
+      if (!token || !word) return false;
+      try {
+        const res = await fetch(`https://api.trancy.org/1/words/${encodeURIComponent(word.trim())}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            star: false,
+            target: 'en',
+            native: 'zh-CN'
+          }),
+          signal: AbortSignal.timeout(5000)
+        });
+        return res.ok;
+      } catch (e) {
+        console.warn('[TrancyCloud] removeWord error:', e);
+        return false;
+      }
+    }
+  };
+  window.__TRANCY_CLOUD__ = TrancyCloud;
+
   const TrancyVocabulary = {
     getAll() {
       try {
@@ -175,6 +295,8 @@
     },
     saveAll(list) {
       safeStorage.setItem('anti_trancy_vocabulary', JSON.stringify(list));
+      const badge = document.getElementById('anti-fab-vocab-count');
+      if (badge) badge.textContent = `${list.length} 词`;
     },
     has(word) {
       if (!word) return false;
@@ -182,7 +304,7 @@
       const norm = word.trim().toLowerCase();
       return list.some(x => x.word && x.word.trim().toLowerCase() === norm);
     },
-    add(item) {
+    add(item, syncToCloud = true) {
       if (!item || !item.word) return false;
       const list = this.getAll();
       const norm = item.word.trim().toLowerCase();
@@ -203,20 +325,55 @@
         list.unshift(entry);
       }
       this.saveAll(list);
+      if (syncToCloud) {
+        TrancyCloud.addWord(item.word);
+      }
       return true;
     },
-    remove(word) {
+    remove(word, syncToCloud = true) {
       if (!word) return false;
       const list = this.getAll();
       const norm = word.trim().toLowerCase();
       const filtered = list.filter(x => x.word && x.word.trim().toLowerCase() !== norm);
       if (filtered.length !== list.length) {
         this.saveAll(filtered);
+        if (syncToCloud) {
+          TrancyCloud.removeWord(word);
+        }
         return true;
       }
       return false;
+    },
+    mergeCloudWords(cloudWords) {
+      if (!Array.isArray(cloudWords)) return;
+      const list = this.getAll();
+      const map = new Map();
+      list.forEach(item => {
+        if (item && item.word) map.set(item.word.trim().toLowerCase(), item);
+      });
+      cloudWords.forEach(cw => {
+        if (!cw || !cw.text) return;
+        const norm = cw.text.trim().toLowerCase();
+        const transText = Array.isArray(cw.translation) && cw.translation[0] ? (cw.translation[0].trans || '') : (typeof cw.translation === 'string' ? cw.translation : '');
+        if (!map.has(norm)) {
+          const entry = {
+            id: 'cloud_' + (cw._id || norm),
+            word: cw.text.trim(),
+            phonetic: cw.phonetic || '',
+            translation: transText,
+            explanation: '',
+            examples: [],
+            context: '',
+            createdAt: cw.starAt ? new Date(cw.starAt).toISOString() : new Date().toISOString()
+          };
+          map.set(norm, entry);
+          list.unshift(entry);
+        }
+      });
+      this.saveAll(list);
     }
   };
+  window.__TRANCY_VOCABULARY__ = TrancyVocabulary;
 
   const _TRANSLATE_CACHE = new Map();
 
@@ -404,7 +561,7 @@
       return result;
     },
 
-    // 5. 上下文 AI 单词语境消歧（Trancy 原生彩色渐变项）
+    // 5. 上下文 AI 单词语境消歧（Trancy 官方真会员优先 + 本地 CPA 极速号池兜底）
     async queryContextExplain(word, sentence) {
       const cleanWord = (word || '').trim();
       const cleanSentence = (sentence || '').trim();
@@ -415,7 +572,40 @@
         return _TRANSLATE_CACHE.get(cacheKey);
       }
 
-      // 请求本地 CPA 8317 极速网关 (Gemini 3.1 Flash-Lite)
+      // 5.1 第一优先级：Trancy 官方会员原生 AI 语境消歧接口
+      const token = TrancyCloud.getToken();
+      if (token) {
+        try {
+          const cloudUrl = `https://api.trancy.org/1/explain?word=${encodeURIComponent(cleanWord)}&sentence=${encodeURIComponent(cleanSentence)}&target=en&native=zh-CN`;
+          const cRes = await fetch(cloudUrl, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json'
+            },
+            signal: AbortSignal.timeout(2800)
+          });
+          if (cRes.ok) {
+            const cJson = await cRes.json();
+            if (cJson && cJson.data && (cJson.data.translation || cJson.data.trans)) {
+              const item = {
+                pos: cJson.data.pos || 'AI',
+                translation: cJson.data.translation || cJson.data.trans,
+                source: 'Trancy 官方 AI'
+              };
+              if (_TRANSLATE_CACHE.size > 500) {
+                const firstKey = _TRANSLATE_CACHE.keys().next().value;
+                _TRANSLATE_CACHE.delete(firstKey);
+              }
+              _TRANSLATE_CACHE.set(cacheKey, item);
+              return item;
+            }
+          }
+        } catch (e) {
+          // 官方接口超时或失败，无缝降级到本地 CPA
+        }
+      }
+
+      // 5.2 第二优先级：本地 CPA 8317 极速网关兜底 (Gemini 3.1 Flash-Lite)
       try {
         const prompt = `你是一个极简词典引擎。请根据上下文句子判断目标单词在语境中的词性和最准确的一个中文释义。\n上下文：${cleanSentence}\n目标单词：${cleanWord}\n输出严格遵循JSON格式（不要markdown标记，不要多余字符）：{"pos":"词性缩写如n./v./adj./web.","translation":"极简中文释义"}`;
 
@@ -431,7 +621,7 @@
             temperature: 0.1,
             max_tokens: 60
           }),
-          signal: AbortSignal.timeout(6000)
+          signal: AbortSignal.timeout(5000)
         });
 
         if (res.ok) {
@@ -445,7 +635,8 @@
               if (parsed && (parsed.translation || parsed.trans)) {
                 const item = {
                   pos: parsed.pos || 'AI',
-                  translation: parsed.translation || parsed.trans
+                  translation: parsed.translation || parsed.trans,
+                  source: '本地 CPA'
                 };
                 if (_TRANSLATE_CACHE.size > 500) {
                   const firstKey = _TRANSLATE_CACHE.keys().next().value;
@@ -632,11 +823,11 @@
       if (TrancyVocabulary.has(text)) {
         TrancyVocabulary.remove(text);
         favBtn.classList.remove('is-fav');
-        showToast('已移出生词本', text);
+        showToast('已移出生词本', `${text} (已从 Trancy 云端同步移除)`);
       } else {
         TrancyVocabulary.add(currentResult || { word: text, translation: '' });
         favBtn.classList.add('is-fav');
-        showToast('★ 已加入生词本', text);
+        showToast('★ 已加入生词本', `${text} (已同步至 Trancy 官方云端)`);
       }
     });
 
@@ -1138,7 +1329,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7;">v2.4.1</span>
+          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.5.0 VIP</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="plan-mode" title="按 Shift+Tab 或 Alt+P 快速切换">
@@ -1158,10 +1349,10 @@
         </button>
 
 
-        <button class="anti-fab-menu-item" data-action="vocab">
+        <button class="anti-fab-menu-item" data-action="vocab" title="点击立即与 Trancy 官方云端双向同步">
           <div class="anti-fab-item-left">
             <span>📚</span>
-            <span>生词本</span>
+            <span>Trancy 云端生词本</span>
           </div>
           <span class="anti-fab-badge" id="anti-fab-vocab-count">${TrancyVocabulary.getAll().length} 词</span>
         </button>
@@ -1293,7 +1484,17 @@
 
       } else if (action === 'vocab') {
         const count = TrancyVocabulary.getAll().length;
-        showToast('📚 生词本', `当前共收藏 ${count} 个词条，可在 VS Code 侧边栏打开完整面板`);
+        showToast('📚 Trancy 生词本', `正在与官方云端双向同步... 当前本地共 ${count} 词`);
+        TrancyCloud.syncFromCloud().then(ok => {
+          const newCount = TrancyVocabulary.getAll().length;
+          const badge = document.getElementById('anti-fab-vocab-count');
+          if (badge) badge.textContent = `${newCount} 词`;
+          if (ok) {
+            showToast('✅ 同步完成', `Trancy 云端生词已同步，当前共 ${newCount} 词`);
+          } else {
+            showToast('ℹ️ 本地生词本', `当前共 ${newCount} 个词条 (离线模式已保障)`);
+          }
+        });
       } else if (action === 'chat-width') {
         cycleChatWidth();
       } else if (action === 'send-mode') {
@@ -1335,4 +1536,14 @@
   initTrancySelection();
   initKeyboardShortcuts();
   initFloatingBall();
+
+  // 预热：延迟 1.2 秒静默拉取 Trancy 云端个人资料与生词本
+  setTimeout(() => {
+    TrancyCloud.fetchProfile().then(() => {
+      TrancyCloud.syncFromCloud().then(() => {
+        const badge = document.getElementById('anti-fab-vocab-count');
+        if (badge) badge.textContent = `${TrancyVocabulary.getAll().length} 词`;
+      });
+    });
+  }, 1200);
 })();

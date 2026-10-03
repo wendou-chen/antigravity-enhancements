@@ -2,7 +2,7 @@
   "name": "antigravity-enhancements",
   "displayName": "Antigravity Trancy & Web Enhancements",
   "description": "专为 Google Antigravity 打造的 Trancy 沉浸式翻译套件：划词翻译气泡、侧边栏生词本、LaTeX公式复制、Mermaid图表渲染、计划模式快速切换。",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "publisher": "antigravity-dev",
   "engines": {
     "vscode": "^1.68.0"
