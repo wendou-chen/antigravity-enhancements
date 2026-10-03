@@ -25,11 +25,11 @@ function getClientInjectionScript() {
     var existingStyle = document.getElementById('anti-enhancements-style');
     if (!existingStyle) {
       var style = document.createElement('style');
-      style.id = 'anti-enhancements-style'; style.setAttribute('data-version', '2.3.0');
+      style.id = 'anti-enhancements-style'; style.setAttribute('data-version', '2.4.0');
       style.textContent = ${JSON.stringify(css)};
       (document.head || document.documentElement).appendChild(style);
     } else {
-      existingStyle.setAttribute('data-version', '2.3.0'); existingStyle.textContent = ${JSON.stringify(css)};
+      existingStyle.setAttribute('data-version', '2.4.0'); existingStyle.textContent = ${JSON.stringify(css)};
     }
 
     // 2. Inject Client Script

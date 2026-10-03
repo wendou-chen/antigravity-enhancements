@@ -134,3 +134,44 @@ Trancy 客户端对 AI 上下文消歧项采用了一套标志性的视觉语言
 1. **`data:` URL 与沙箱页面禁用 `localStorage` 守卫**：
    - **事故根因**：Electron 启动阶段或特定 webview 处于 `data:text/html` 沙箱环境。直接调用 `window.localStorage` 会触发 Chromium 原生抛出 `SecurityError: Failed to read the 'localStorage' property from 'Window': Storage is disabled inside 'data:' URLs.`，导致后续所有注入脚本全部中断。
    - **铁律防御**：所有存储读写统一经由 `safeStorage` 封装托管，在抛出异常时自动回退至 `window.__ANTI_MEM_STORAGE__` 内存对象，保证任意页面环境零崩溃。
+
+---
+
+## 六、Antigravity 计划模式 (Plan Mode) 与富文本 Lexical 架构逆向
+
+### 1. 为什么纯文本 `/plan` 彻底无效？
+- **DSH Web 架构**：DSH 采用纯文本 Command Claiming 机制，在 `<textarea>` 顶格插入 `/plan ` 后 dispatch 一个包含 keyCode 的 Space 键盘事件即可激活命令黄色高亮。
+- **Antigravity 桌面架构**：输入框采用 **Facebook Lexical 富文本框架**（节点挂载 `editorEl.__lexicalEditor`）。消息提交时，Antigravity 不检查纯文本内容，而是解析 Lexical 树中的 DecoratorNode。纯文本输入只会创建普通 `PD` / `text` 节点，完全不会被系统识别为计划模式。
+
+### 2. 原生 Slash Command 节点真实结构
+通过 DevTools CDP 探查确认，Antigravity 注册的斜杠指令不是社区的 `beautifulMention`，而是专有扩展节点：
+- **节点类型**：`type: "contextScopeItemMention"`（继承自 Lexical `MI` DecoratorNode）；
+- **Payload 契约**：
+  ```json
+  {
+    "trigger": "@",
+    "value": "contextScopeItemMention",
+    "data": {
+      "mentionText": "plan",
+      "data": "{\"slashCommand\":{\"info\":{\"name\":\"plan\",\"modelFacingText\":\"<PLAN>The user is requesting that you think and plan carefully before executing the upcoming task...\",\"type\":\"SLASH_COMMAND_TYPE_SYSTEM\",\"icon\":\"ballot\"}}}"
+    },
+    "type": "contextScopeItemMention",
+    "version": 1
+  }
+  ```
+- **DOM 表现**：
+  渲染为 `<span data-lexical-decorator="true"><span class="inline-pill" data-uri="slashCommand:plan"><svg data-symbol-name="ballot">...</svg>plan</span></span>`。
+
+### 3. 一键切换核心实现 (`togglePlanMode`)
+- **开启**：
+  1. 从 React Fiber (`curr.memoizedProps.slashCommandItems`) 动态提取官方 `plan` 指令定义（包含 `modelFacingText` 等），无 Fiber 降级为官方硬编码标准 Prompt；
+  2. 获取节点类 `const NodeClass = editor._nodes.get('contextScopeItemMention').klass;`；
+  3. 执行 `NodeClass.importJSON({ data: dataPayload })` 创建原生节点；
+  4. 在第一段首个子节点前插入（若空段则直接 append），并在胶囊后追加 `' '` 空格节点；
+  5. `root.selectEnd()` 将光标平滑聚焦在草稿末尾。
+- **关闭**：
+  1. 遍历段落子节点数组 `children = [...p.getChildren()]`；
+  2. 命中 `node.getType() === 'contextScopeItemMention' && node.__data?.mentionText === 'plan'`；
+  3. 检查后置兄弟 `children[i + 1]`（注意：DecoratorNode 无 `getNextSibling` 原型方法，必须通过数组索引查找），若为包含前导空格的文本节点，调用 `setTextContent(text.slice(1))` 清除前导空格；
+  4. 调用 `node.remove()` 安全移除胶囊节点，恢复常规模式。
+

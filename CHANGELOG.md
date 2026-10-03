@@ -1,5 +1,24 @@
 # Antigravity Enhancements 更新与逆向日志 (CHANGELOG)
 
+## [v2.4.0] - 2026-10-03
+
+### 🌟 核心特性 (Antigravity 计划模式 Plan Mode 快速切换)
+- **底层逆向突破 (Lexical contextScopeItemMention 原生节点适配)**：
+  - 深入探查 Antigravity 输入框底层架构，确证为 Facebook Lexical 富文本编辑器；
+  - 揭示纯文本 `/plan` 无法激活计划模式的根因：Antigravity 消息解析依赖内部 DecoratorNode `contextScopeItemMention` 结构，纯文本输入仅产生普通 `text` 节点；
+  - 动态从 React Fiber 树检索 `slashCommandItems` 中的官方 `plan` 系统指令契约（包含 `modelFacingText`、`icon: ballot` 等），直接通过 `NodeClass.importJSON({ data: dataPayload })` 毫秒级原生直出胶囊芯片，零按键模拟、零弹窗闪烁。
+- **双向平滑切换引擎 (`togglePlanMode`)**：
+  - **一键开启**：输入框顶格插入原生 `slashCommand:plan` 胶囊并追加间隔空格，保留光标在文本末尾，用户原有草稿文本 100% 无损保留；
+  - **一键关闭**：安全从 Lexical 树中移除 `contextScopeItemMention(plan)` 节点并智能消除前置多余空格，光标保持聚焦，秒级恢复常规对话。
+- **多通道交互矩阵**：
+  - **快捷键**：支持 `Shift + Tab`（与 DSH 肌肉记忆对齐）及 `Alt + P` 双快捷键一键秒切；
+  - **FAB 控制中心**：悬浮球菜单新增「🎯 计划模式」按钮，实时呈现 `标准` 与高亮 `Plan` 徽标；
+  - **输入态实时同态**：挂载输入监听，用户手动 Backspace 删掉胶囊时，FAB 状态徽标自动同态回退为 `标准`。
+- **自动化物理门禁升级**：
+  - `status.ps1 -Test` 自动化冒烟测试套件升级至 7 级物理门禁，CDP 实机验证计划模式开启/关闭/DOM 胶囊挂载与清除全部 100% PASS。
+
+---
+
 ## [v2.3.0] - 2026-10-02
 
 ### 🌟 核心特性 (Trancy 原生同款 AI 上下文消歧)

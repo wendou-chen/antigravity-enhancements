@@ -112,7 +112,7 @@ async function runSmokeTest() {
     hasGlobalConfig: Boolean(window.__TRANCY_GLOBAL_CONFIG__)
   })`);
 
-  if (domState.hasStyle && domState.styleVersion === '2.3.0') {
+  if (domState.hasStyle && domState.styleVersion === '2.4.0') {
     logPass(`样式表注入就绪，版本对齐: v${domState.styleVersion}`);
   } else {
     logFail(`样式表状态异常: ${JSON.stringify(domState)}`);
@@ -167,6 +167,43 @@ async function runSmokeTest() {
     logPass(`LRU 缓存命中，耗时: ${cost}ms (瞬间直出)`);
   } else {
     logFail(`LRU 缓存未生效，耗时: ${cost}ms`);
+  }
+
+  // 门禁 7：计划模式 (Plan Mode) 状态与一键切换验证
+  console.log('\n[门禁 7: 计划模式 (Plan Mode) 原生节点切换与状态同步]');
+  const planCheck = await evalInPage(`(async () => {
+    if (typeof window.__togglePlanMode !== 'function' || typeof window.__isPlanModeActive !== 'function') {
+      return { error: 'NO_PLAN_FUNCTIONS' };
+    }
+    const wasActive = window.__isPlanModeActive();
+    if (wasActive) window.__togglePlanMode();
+    await new Promise(r => setTimeout(r, 80));
+    
+    // 1. 开启测试
+    window.__togglePlanMode();
+    await new Promise(r => setTimeout(r, 120));
+    const isNowActive = window.__isPlanModeActive();
+    const ed = document.querySelector('[contenteditable="true"]');
+    const hasPill = Boolean(ed?.querySelector('[data-uri="slashCommand:plan"]'));
+
+    // 2. 关闭恢复
+    window.__togglePlanMode();
+    await new Promise(r => setTimeout(r, 120));
+    const isFinallyOff = !window.__isPlanModeActive();
+    const pillRemoved = !Boolean(ed?.querySelector('[data-uri="slashCommand:plan"]'));
+
+    return {
+      isNowActive,
+      hasPill,
+      isFinallyOff,
+      pillRemoved
+    };
+  })()`);
+
+  if (planCheck && planCheck.isNowActive && planCheck.hasPill && planCheck.isFinallyOff && planCheck.pillRemoved) {
+    logPass('计划模式一键切换完美成功 (开启插入原生 slashCommand:plan 胶囊，关闭平滑清除)');
+  } else {
+    logFail(`计划模式切换异常: ${JSON.stringify(planCheck)}`);
   }
 
   ws.close();

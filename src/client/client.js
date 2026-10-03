@@ -844,10 +844,179 @@
   }
 
   // -------------------------------------------------------------
-  // 6. 发送快捷键与全局监听 (Alt+W 调宽, Alt+Shift+T 翻译, Ctrl+Enter 发送)
+  // 6. 计划模式 (Plan Mode) 快速切换与 Lexical 节点注入
+  // -------------------------------------------------------------
+  function getChatEditor() {
+    const eds = document.querySelectorAll('[contenteditable="true"]');
+    if (eds.length === 1) return eds[0];
+    if (eds.length > 1) {
+      const focused = Array.from(eds).find(el => el === document.activeElement || el.contains(document.activeElement));
+      if (focused) return focused;
+      const composer = Array.from(eds).find(el => el.classList.contains('cursor-text') || el.closest('[data-testid="agent-input-box"]') || el.closest('form'));
+      if (composer) return composer;
+      return eds[0];
+    }
+    return null;
+  }
+
+  function isPlanModeActive() {
+    const ed = getChatEditor();
+    if (!ed) return false;
+    if (ed.querySelector('[data-uri="slashCommand:plan"]')) return true;
+    const editor = ed.__lexicalEditor;
+    if (editor && editor._editorState && editor._editorState._nodeMap) {
+      for (const [k, node] of editor._editorState._nodeMap.entries()) {
+        if (node.getType() === 'contextScopeItemMention' && node.__data?.mentionText === 'plan') {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function updateFabPlanBadge(active) {
+    const badge = document.getElementById('anti-fab-plan-mode');
+    if (!badge) return;
+    const isAct = typeof active === 'boolean' ? active : isPlanModeActive();
+    badge.textContent = isAct ? 'Plan' : '标准';
+    if (isAct) {
+      badge.classList.add('is-active');
+    } else {
+      badge.classList.remove('is-active');
+    }
+  }
+
+  function togglePlanMode() {
+    const ed = getChatEditor();
+    if (!ed) {
+      showToast('计划模式', '未找到活跃的输入框', true);
+      return false;
+    }
+
+    const editor = ed.__lexicalEditor;
+    if (!editor) {
+      showToast('计划模式', '未找到 Lexical 编辑器实例', true);
+      return false;
+    }
+
+    const currentlyActive = isPlanModeActive();
+
+    if (currentlyActive) {
+      // 1. 关闭计划模式：移除 contextScopeItemMention(plan) 节点及紧随的前导空格
+      editor.update(() => {
+        const root = editor._editorState._nodeMap.get('root');
+        if (!root) return;
+        for (const p of root.getChildren()) {
+          const children = [...p.getChildren()];
+          for (let i = 0; i < children.length; i++) {
+            const node = children[i];
+            if (node.getType() === 'contextScopeItemMention' && node.__data?.mentionText === 'plan') {
+              const next = children[i + 1];
+              if (next && next.getType() === 'text') {
+                const text = next.getTextContent();
+                if (text.startsWith(' ')) {
+                  next.setTextContent(text.slice(1));
+                }
+              }
+              node.remove();
+            }
+          }
+        }
+        root.selectEnd();
+      });
+
+      ed.focus();
+      updateFabPlanBadge(false);
+      showToast('⚡ 已切换至「标准模式」', '已清除 /plan 计划模式指令，恢复常规对话');
+      return false;
+    } else {
+      // 2. 开启计划模式：嵌入原生 contextScopeItemMention 节点
+      let planCmd = null;
+      try {
+        let curr = ed[Object.keys(ed).find(k => k.startsWith('__reactFiber$'))];
+        while (curr) {
+          if (curr.memoizedProps?.slashCommandItems) {
+            planCmd = curr.memoizedProps.slashCommandItems.find(i => (i.title === 'plan' || i.name === 'plan' || i.info?.name === 'plan'));
+            if (planCmd) break;
+          }
+          curr = curr.return;
+        }
+      } catch (e) {}
+
+      const defaultModelFacingText = '<PLAN>The user is requesting that you think and plan carefully before executing the upcoming task.\\nCarefully research the task, make sure that you and the user are aligned on the goals and requirements,\\ncreate a detailed implementation plan artifact, and get user approval on the plan before making any code changes (besides artifacts)\\nor running any modifying commands.\\n\\n# Guidelines\\n- Establish a shared understanding of the task with the user. If there are any ambiguities, underspecified requirements,\\nor implicit assumptions, clarify them with the user before proceeding.\\n- Thoroughly research the codebase to establish a solid understanding of the relevant components, systems, dependencies, and architecture.\\nAs you research, provide verbal updates of your research steps and thought process with the user, so they can follow along.\\n- Create an implementation plan artifact that outlines your proposed execution strategy.\\nSet request_feedback = true and user_facing = true in the ArtifactMetadata. The user will automatically\\nsee any new and modified plans you create, so DO NOT re-summarize the plan.\\n- Only after the user explicitly approves the plan should you proceed to execution.\\n- Verify that your changes have the desired effects e.g. run unit tests, make sure code builds, etc. before claiming that the task is complete.\\n- After you\\\'ve completed your task and verified that your solution works, create a walkthrough artifact to summarize your work.\\n\\n# Planning Mode Artifacts\\nWhen in planning mode, you should create two special artifacts.\\n\\n# Implementation Plan\\nPath: <Artifact Directory>/<plan_name>.md\\n\\n**Purpose**: A technical design document to present your implementation plan to the user for feedback and approval.\\nAfter reading the document, the user should understand the key technical details of your plan, and be able to make an informed decision on whether to approve it.\\nThis document should be very detailed, including code snippets, diffs, mermaid diagrams, verification strategies, and background information.\\n\\n**Format**: Use the following format, omitting any irrelevant sections:\\n\\n## [Goal Description]\\nProvide a brief description of the problem, any background context, and what the change accomplishes.\\n\\n## User Review Required\\nDocument anything that requires user review or feedback, for example, breaking changes or significant design decisions. Use GitHub alerts (IMPORTANT/WARNING/CAUTION) to highlight critical items.\\n\\n## Open Questions\\nAny clarifying or design questions for the user that will impact the implementation plan. Use GitHub alerts (IMPORTANT/WARNING/CAUTION) to highlight critical items.\\n\\n## Proposed Changes\\nGroup files by component (e.g., package, feature area, dependency layer) and order logically (dependencies first). Separate components with horizontal rules for visual clarity.\\n\\n### [Component Name]\\nSummary of what will change in this component with explicit code snippets and diffs. For specific files, Use [NEW] and [DELETE] to demarcate new and deleted files, for example:\\n#### [MODIFY] file basename\\n#### [NEW] file basename\\n#### [DELETE] file basename\\n\\n## Verification Plan\\nSummary of how you will verify that your changes have the desired effects.\\n\\n### Automated Tests\\nExact commands to run automated tests\\n\\n### Manual Verification\\nInstructions for what the user should manually verify.\\n\\n# Walkthrough\\nPath: <Artifact Directory>/walkthrough.md\\n\\n**Purpose**: After completing work, summarize what you accomplished. Update an existing walkthrough for related follow-up work rather than creating a new one.\\n\\n**Document**:\\n- Changes made\\n- What was tested\\n- Validation results\\n\\nEmbed screenshots and recordings to visually demonstrate UI changes and user flows.</PLAN>';
+
+      const modelFacingText = planCmd?.info?.modelFacingText || defaultModelFacingText;
+
+      const entry = editor._nodes.get('contextScopeItemMention');
+      const NodeClass = entry ? entry.klass : null;
+      const TextKlass = editor._nodes.get('text')?.klass;
+
+      if (!NodeClass) {
+        showToast('计划模式', '未找到 contextScopeItemMention 节点定义', true);
+        return false;
+      }
+
+      const dataPayload = {
+        mentionText: 'plan',
+        data: JSON.stringify({
+          slashCommand: {
+            info: {
+              name: 'plan',
+              modelFacingText: modelFacingText,
+              type: 'SLASH_COMMAND_TYPE_SYSTEM',
+              icon: 'ballot'
+            }
+          }
+        })
+      };
+
+      editor.update(() => {
+        const root = editor._editorState._nodeMap.get('root').getWritable();
+        let p = root.getFirstChild();
+        if (!p) {
+          const ParagraphKlass = editor._nodes.get('paragraph').klass;
+          p = new ParagraphKlass();
+          root.append(p);
+        }
+        const writableP = p.getWritable();
+        const pillNode = NodeClass.importJSON({ data: dataPayload });
+
+        const firstChild = writableP.getFirstChild();
+        if (firstChild) {
+          firstChild.insertBefore(pillNode);
+        } else {
+          writableP.append(pillNode);
+        }
+        if (TextKlass) {
+          pillNode.insertAfter(new TextKlass(' '));
+        }
+        root.selectEnd();
+      });
+
+      ed.focus();
+      updateFabPlanBadge(true);
+      showToast('🎯 已切换至「Plan 计划模式」', '输入框已顶格嵌入 /plan 并进入计划模式');
+      return true;
+    }
+  }
+
+  window.__togglePlanMode = togglePlanMode;
+  window.__isPlanModeActive = isPlanModeActive;
+
+  // -------------------------------------------------------------
+  // 7. 发送快捷键与全局监听 (Shift+Tab/Alt+P 计划模式, Alt+W 调宽, Alt+Shift+T 翻译, Ctrl+Enter 发送)
   // -------------------------------------------------------------
   function initKeyboardShortcuts() {
     const onKey = (e) => {
+      // 0. Shift+Tab 或 Alt+P: 快速切换计划模式 (Plan Mode ⇄ 标准模式)
+      if ((e.shiftKey && e.key === 'Tab') || (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'p' || e.key === 'P' || e.code === 'KeyP'))) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        togglePlanMode();
+        return;
+      }
+
       // 1. Alt+W 快速切换页面宽度
       if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'w' || e.key === 'W' || e.code === 'KeyW')) {
         e.preventDefault();
@@ -939,6 +1108,12 @@
     };
     document.addEventListener('keydown', onKey, true);
     cleanups.push(() => document.removeEventListener('keydown', onKey, true));
+
+    const onInput = () => {
+      updateFabPlanBadge();
+    };
+    document.addEventListener('input', onInput, true);
+    cleanups.push(() => document.removeEventListener('input', onInput, true));
   }
 
   // -------------------------------------------------------------
@@ -965,8 +1140,16 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7;">v2.3.0</span>
+          <span style="font-size: 9.5px; opacity: 0.7;">v2.4.0</span>
         </div>
+
+        <button class="anti-fab-menu-item" data-action="plan-mode" title="按 Shift+Tab 或 Alt+P 快速切换">
+          <div class="anti-fab-item-left">
+            <span>🎯</span>
+            <span>计划模式</span>
+          </div>
+          <span class="anti-fab-badge" id="anti-fab-plan-mode">标准</span>
+        </button>
 
         <button class="anti-fab-menu-item" data-action="trancy">
           <div class="anti-fab-item-left">
@@ -1023,6 +1206,8 @@
         menu.classList.add('is-active');
         const vocabBadge = document.getElementById('anti-fab-vocab-count');
         if (vocabBadge) vocabBadge.textContent = TrancyVocabulary.getAll().length + ' 词';
+        const planBadge = document.getElementById('anti-fab-plan-mode');
+        if (planBadge) updateFabPlanBadge();
       } else {
         menu.classList.remove('is-active');
       }
@@ -1072,7 +1257,9 @@
       e.stopPropagation();
 
       const action = btn.dataset.action;
-      if (action === 'trancy') {
+      if (action === 'plan-mode') {
+        togglePlanMode();
+      } else if (action === 'trancy') {
         // 循环切换：自动开 -> 气泡开 -> Ctrl+划词 -> 彻底关闭 -> 自动开
         if (!state.trancyTranslateEnabled) {
           state.trancyTranslateEnabled = true;
