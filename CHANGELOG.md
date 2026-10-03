@@ -1,5 +1,18 @@
 # Antigravity Enhancements 更新与逆向日志 (CHANGELOG)
 
+## [v2.4.1] - 2026-10-03
+
+### 🎨 交互减噪与静默直出 (Silent Plan Mode Toggle)
+- **剔除多余 Toast 弹窗条幅**：
+  - 彻底移除 `togglePlanMode()` 中的模式切换弹窗条幅（`showToast`），消除屏幕中央遮挡与视觉噪音；
+  - 保持输入框内原生胶囊芯片（包含官方 ballot 图标与 `plan` 标签）及 FAB 悬浮控制中心 Badge（`标准` / `Plan`）的双重实时状态反馈；
+  - 实现零干扰、不打断打字心流的极致沉浸式键盘快捷切换（`Shift + Tab` / `Alt + P`）。
+- **生命周期守卫与文档固化**：
+  - 在工作区级 `AGENTS.md` 沉淀 Section 4「Antigravity Lexical 富文本与计划模式守卫」与 7 级物理门禁标准；
+  - 形成对官方 Feature Request（官方富文本缺少计划模式快捷键的问题报告）的最佳合规建议与草案。
+
+---
+
 ## [v2.4.0] - 2026-10-03
 
 ### 🌟 核心特性 (Antigravity 计划模式 Plan Mode 快速切换)

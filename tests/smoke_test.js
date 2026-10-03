@@ -112,7 +112,7 @@ async function runSmokeTest() {
     hasGlobalConfig: Boolean(window.__TRANCY_GLOBAL_CONFIG__)
   })`);
 
-  if (domState.hasStyle && domState.styleVersion === '2.4.0') {
+  if (domState.hasStyle && domState.styleVersion === '2.4.1') {
     logPass(`样式表注入就绪，版本对齐: v${domState.styleVersion}`);
   } else {
     logFail(`样式表状态异常: ${JSON.stringify(domState)}`);

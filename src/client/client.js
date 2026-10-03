@@ -927,7 +927,6 @@
 
       ed.focus();
       updateFabPlanBadge(false);
-      showToast('⚡ 已切换至「标准模式」', '已清除 /plan 计划模式指令，恢复常规对话');
       return false;
     } else {
       // 2. 开启计划模式：嵌入原生 contextScopeItemMention 节点
@@ -995,7 +994,6 @@
 
       ed.focus();
       updateFabPlanBadge(true);
-      showToast('🎯 已切换至「Plan 计划模式」', '输入框已顶格嵌入 /plan 并进入计划模式');
       return true;
     }
   }
@@ -1140,7 +1138,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7;">v2.4.0</span>
+          <span style="font-size: 9.5px; opacity: 0.7;">v2.4.1</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="plan-mode" title="按 Shift+Tab 或 Alt+P 快速切换">
