@@ -206,4 +206,30 @@ Trancy 客户端对 AI 上下文消歧项采用了一套标志性的视觉语言
 - **鉴权约束**：未带会员 Bearer Token 会报 401/403；带有效会员 Token 毫秒级返回 `{ "data": { "pos": "n.", "translation": "释义" } }`；
 - **双轨容灾策略**：优先走官方会员接口，超时（>2.8s）或离线时平滑回退本地 CPA 8317 端口（Gemini 3.1 Flash-Lite）。
 
+---
+
+## 八、Antigravity 宿主主题探测与浅深双向自适应架构
+
+### 1. 宿主主题探针判据
+- **Class 契约**：Antigravity 在 `document.body` 挂载了 `theme-light` 与 `theme-dark` 两个标准 class（例如 Solarized Light 下为 `theme-standalone theme-light`）；
+- **RGB 亮度兜底计算**：
+  ```javascript
+  const bg = window.getComputedStyle(document.body).backgroundColor;
+  // 解析 rgb(r, g, b)
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  const isLight = luminance > 140; // >140 判定为浅色，否则深色
+  ```
+- **实时平滑联动**：挂载 `MutationObserver(document.body, { attributes: true, attributeFilter: ['class', 'style'] })`，宿主切换主题时 0ms 自动感知。
+
+### 2. 样式变量分流与 1:1 排版复刻
+- **变量分流契约**：在根选择器上通过 `[data-anti-theme="light"]` 与 `[data-anti-theme="dark"]` 分离全套卡片变量；
+- **浅色明亮排版（1:1 复刻截图）**：
+  - 卡片背景：`#FFFFFF` 纯白，边框 `1px solid rgba(0, 0, 0, 0.09)`；
+  - 单词大标题：加粗纯黑字 `#111827`；
+  - 音标徽标：浅灰底小胶囊 `#F3F4F6`，文字 `#4B5563`；
+  - 词性标签：分词性独立着色（`n.` 紫底 `#EEF2FF` / 深紫字 `#4F46E5`；`web.` 蓝底 `#F3E8FF`；`v.` 绿底 `#ECFDF5`）；
+  - AI 语境消歧：白底方形徽标 + `conic-gradient` 旋转彩色光晕边框 + `#0369A1` 高亮中文释义；
+  - 手动切换状态持久化于 `safeStorage` 的 `anti_enhance_theme_mode`（`auto` / `light` / `dark`）。
+
+
 

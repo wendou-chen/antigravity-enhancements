@@ -163,6 +163,100 @@
   }
 
   // -------------------------------------------------------------
+  // 1.5 ThemeManager: 外观主题自适应与切换管理 (智能跟随宿主 / 浅色明亮 / 深色暗黑)
+  // -------------------------------------------------------------
+  const ThemeManager = {
+    MODE_KEY: 'anti_enhance_theme_mode',
+    currentMode: 'auto', // 'auto' | 'light' | 'dark'
+
+    detectHostTheme() {
+      // 1. 宿主 class 判定
+      if (document.body && document.body.classList) {
+        if (document.body.classList.contains('theme-light')) return 'light';
+        if (document.body.classList.contains('theme-dark')) return 'dark';
+      }
+      // 2. 背景色亮度计算判定
+      try {
+        const bg = window.getComputedStyle(document.body).backgroundColor;
+        const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (match) {
+          const r = parseInt(match[1], 10);
+          const g = parseInt(match[2], 10);
+          const b = parseInt(match[3], 10);
+          const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+          return luminance > 140 ? 'light' : 'dark';
+        }
+      } catch (e) {}
+      return 'light';
+    },
+
+    getResolvedTheme() {
+      if (this.currentMode === 'auto') {
+        return this.detectHostTheme();
+      }
+      return this.currentMode;
+    },
+
+    apply() {
+      const resolved = this.getResolvedTheme();
+      try {
+        document.documentElement.setAttribute('data-anti-theme', resolved);
+        document.body.setAttribute('data-anti-theme', resolved);
+      } catch (e) {}
+      const badge = document.getElementById('anti-fab-theme');
+      if (badge) {
+        if (this.currentMode === 'auto') {
+          badge.textContent = `跟随 (${resolved === 'light' ? '浅' : '深'})`;
+        } else if (this.currentMode === 'light') {
+          badge.textContent = '浅色明亮';
+        } else {
+          badge.textContent = '深色暗黑';
+        }
+      }
+      // 同步当前卡片
+      const card = document.querySelector('.trancy-card-container');
+      if (card) {
+        card.setAttribute('data-anti-theme', resolved);
+      }
+    },
+
+    cycle() {
+      if (this.currentMode === 'auto') {
+        this.currentMode = 'light';
+      } else if (this.currentMode === 'light') {
+        this.currentMode = 'dark';
+      } else {
+        this.currentMode = 'auto';
+      }
+      safeStorage.setItem(this.MODE_KEY, this.currentMode);
+      this.apply();
+      let modeText = '跟随反重力宿主';
+      if (this.currentMode === 'light') modeText = '强制浅色明亮';
+      else if (this.currentMode === 'dark') modeText = '强制深色暗黑';
+      showToast('🎨 外观主题', `已切换为：${modeText}`);
+    },
+
+    init() {
+      const saved = safeStorage.getItem(this.MODE_KEY);
+      if (saved && ['auto', 'light', 'dark'].includes(saved)) {
+        this.currentMode = saved;
+      }
+      this.apply();
+
+      try {
+        const observer = new MutationObserver(() => {
+          if (this.currentMode === 'auto') {
+            this.apply();
+          }
+        });
+        observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+        cleanups.push(() => observer.disconnect());
+      } catch (e) {}
+    }
+  };
+  window.__ANTI_THEME_MANAGER__ = ThemeManager;
+
+  // -------------------------------------------------------------
   // 2. Trancy 官方真会员云端同步与生词本管理
   // -------------------------------------------------------------
   const TrancyCloud = {
@@ -375,7 +469,7 @@
   };
   window.__TRANCY_VOCABULARY__ = TrancyVocabulary;
 
-  const _TRANSLATE_CACHE = new Map();
+  const _TRANSLATE_CACHE = (typeof window !== 'undefined' && (window.__TRANCY_CACHE__ = window.__TRANCY_CACHE__ || new Map())) || new Map();
 
   const TrancyEngine = {
     async query(text) {
@@ -443,13 +537,26 @@
               }
 
               // 提取分词性详细解析（同时支持英文 explains 与中文 dict）
+              let explainsList = [];
               let explanation = '';
               if (Array.isArray(d.explains) && d.explains.length > 0) {
+                explainsList = d.explains
+                  .filter(e => e.terms && e.terms.length > 0)
+                  .map(e => ({
+                    pos: e.pos || '',
+                    terms: Array.isArray(e.terms) ? e.terms : [e.terms]
+                  }));
                 explanation = d.explains
                   .filter(e => e.terms && e.terms.length > 0)
                   .map(e => `${e.pos || ''} ${e.terms.slice(0, 5).join('，')}`.trim())
                   .join('\n');
               } else if (Array.isArray(d.dict) && d.dict.length > 0) {
+                explainsList = d.dict
+                  .filter(e => e.terms && e.terms.length > 0)
+                  .map(e => ({
+                    pos: e.pos || '',
+                    terms: Array.isArray(e.terms) ? e.terms : [e.terms]
+                  }));
                 explanation = d.dict
                   .filter(e => e.terms && e.terms.length > 0)
                   .map(e => `${e.pos ? e.pos + ': ' : ''}${e.terms.slice(0, 5).join(', ')}`.trim())
@@ -470,6 +577,7 @@
                   word: cleanText,
                   phonetic,
                   translation: translation || cleanText,
+                  explainsList,
                   explanation,
                   examples,
                   source: 'Trancy 原生词典'
@@ -517,7 +625,12 @@
             }
 
             let dictExplains = '';
+            let explainsList = [];
             if (Array.isArray(data[1])) {
+              explainsList = data[1].map(posGroup => ({
+                pos: posGroup[0] ? (posGroup[0].endsWith('.') ? posGroup[0] : posGroup[0] + '.') : '',
+                terms: Array.isArray(posGroup[1]) ? posGroup[1] : []
+              }));
               dictExplains = data[1].map(posGroup => {
                 const pos = posGroup[0] || '';
                 const terms = Array.isArray(posGroup[1]) ? posGroup[1].slice(0, 4).join('，') : '';
@@ -530,6 +643,7 @@
                 word: cleanText,
                 phonetic: '',
                 translation: transText,
+                explainsList,
                 explanation: dictExplains,
                 examples: [],
                 source: 'Google 原生翻译'
@@ -772,6 +886,7 @@
 
     const card = document.createElement('div');
     card.className = 'trancy-card-container is-visible';
+    card.setAttribute('data-anti-theme', ThemeManager.getResolvedTheme());
 
     const cardWidth = 330;
     const cardHeight = 260;
@@ -847,22 +962,57 @@
 
     const bodyEl = card.querySelector('#trancy-card-body');
     if (bodyEl) {
-      let bodyHtml = `<div class="trancy-trans-text">${escapeHtml(result.translation)}</div>`;
+      let bodyHtml = '';
 
-      // 如果选中的是单个单词且有上下文语境，预先插入 Trancy 原生同款 AI 语境消歧 Loading 框
-      if (isSingleWord && contextSentence) {
-        bodyHtml += `
-          <div class="trancy-ai-item" id="trancy-ai-context-box">
-            <span class="trancy-pos-ai loading">AI.</span>
-            <span class="trancy-ai-text">语境消歧中...</span>
-            <span class="trancy-ai-badge">✨ 上下文 AI</span>
-          </div>
-        `;
+      const hasExplainsList = Array.isArray(result.explainsList) && result.explainsList.length > 0;
+
+      if (hasExplainsList) {
+        bodyHtml += '<div class="trancy-explains-list">';
+        result.explainsList.forEach(item => {
+          const posRaw = (item.pos || '').toLowerCase();
+          let posClass = 'pos-other';
+          if (posRaw.includes('n')) posClass = 'pos-n';
+          else if (posRaw.includes('v')) posClass = 'pos-v';
+          else if (posRaw.includes('adj') || posRaw.includes('a.')) posClass = 'pos-adj';
+          else if (posRaw.includes('web')) posClass = 'pos-web';
+          else if (posRaw.includes('adv')) posClass = 'pos-adj';
+
+          const termsStr = Array.isArray(item.terms) ? item.terms.slice(0, 6).join('； ') : String(item.terms || '');
+          bodyHtml += `
+            <div class="trancy-pos-row">
+              <span class="trancy-pos-tag ${posClass}">${escapeHtml(item.pos || '释')}</span>
+              <span class="trancy-pos-terms">${escapeHtml(termsStr)}</span>
+            </div>
+          `;
+        });
+
+        // 如果选中的是单个单词且有上下文语境，预先插入 Trancy 原生同款 AI 语境消歧 Loading 框 (彩色旋转光晕边框 - 如截图第3行)
+        if (isSingleWord && contextSentence) {
+          bodyHtml += `
+            <div class="trancy-pos-row trancy-ai-row" id="trancy-ai-context-box">
+              <span class="trancy-pos-ai loading">AI.</span>
+              <span class="trancy-ai-text">语境消歧中...</span>
+              <span class="trancy-ai-badge">✨ 上下文 AI</span>
+            </div>
+          `;
+        }
+        bodyHtml += '</div>';
+      } else {
+        bodyHtml += `<div class="trancy-trans-text">${escapeHtml(result.translation)}</div>`;
+        if (isSingleWord && contextSentence) {
+          bodyHtml += `
+            <div class="trancy-pos-row trancy-ai-row" id="trancy-ai-context-box">
+              <span class="trancy-pos-ai loading">AI.</span>
+              <span class="trancy-ai-text">语境消歧中...</span>
+              <span class="trancy-ai-badge">✨ 上下文 AI</span>
+            </div>
+          `;
+        }
+        if (result.explanation) {
+          bodyHtml += `<div class="trancy-explanation">${escapeHtml(result.explanation)}</div>`;
+        }
       }
 
-      if (result.explanation) {
-        bodyHtml += `<div class="trancy-explanation">${escapeHtml(result.explanation)}</div>`;
-      }
       if (result.examples && result.examples.length > 0) {
         bodyHtml += '<div class="trancy-examples">';
         result.examples.forEach(ex => {
@@ -885,7 +1035,7 @@
           if (!aiBox) return;
           if (aiRes && aiRes.translation) {
             aiBox.innerHTML = `
-              <span class="trancy-pos-ai">${escapeHtml(aiRes.pos || 'AI')}</span>
+              <span class="trancy-pos-ai">${escapeHtml(aiRes.pos ? (aiRes.pos.endsWith('.') ? aiRes.pos : aiRes.pos + '.') : 'AI.')}</span>
               <span class="trancy-ai-text">${escapeHtml(aiRes.translation)}</span>
               <span class="trancy-ai-badge">✨ 上下文释义</span>
             `;
@@ -1329,7 +1479,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.5.0 VIP</span>
+          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.6.0 VIP</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="plan-mode" title="按 Shift+Tab 或 Alt+P 快速切换">
@@ -1340,6 +1490,14 @@
           <span class="anti-fab-badge" id="anti-fab-plan-mode">标准</span>
         </button>
 
+        <button class="anti-fab-menu-item" data-action="theme" title="点击循环切换外观主题：跟随宿主 / 浅色明亮 / 深色暗黑">
+          <div class="anti-fab-item-left">
+            <span>🎨</span>
+            <span>外观主题</span>
+          </div>
+          <span class="anti-fab-badge" id="anti-fab-theme">跟随</span>
+        </button>
+
         <button class="anti-fab-menu-item" data-action="trancy">
           <div class="anti-fab-item-left">
             <span>🌐</span>
@@ -1347,7 +1505,6 @@
           </div>
           <span class="anti-fab-badge ${state.trancyTranslateEnabled ? 'is-active' : ''}" id="anti-fab-trancy">${trancyLabel}</span>
         </button>
-
 
         <button class="anti-fab-menu-item" data-action="vocab" title="点击立即与 Trancy 官方云端双向同步">
           <div class="anti-fab-item-left">
@@ -1393,6 +1550,7 @@
       isMenuOpen = typeof open === 'boolean' ? open : !isMenuOpen;
       if (isMenuOpen) {
         menu.classList.add('is-active');
+        ThemeManager.apply();
         const vocabBadge = document.getElementById('anti-fab-vocab-count');
         if (vocabBadge) vocabBadge.textContent = TrancyVocabulary.getAll().length + ' 词';
         const planBadge = document.getElementById('anti-fab-plan-mode');
@@ -1448,6 +1606,8 @@
       const action = btn.dataset.action;
       if (action === 'plan-mode') {
         togglePlanMode();
+      } else if (action === 'theme') {
+        ThemeManager.cycle();
       } else if (action === 'trancy') {
         // 循环切换：自动开 -> 气泡开 -> Ctrl+划词 -> 彻底关闭 -> 自动开
         if (!state.trancyTranslateEnabled) {
@@ -1532,6 +1692,7 @@
   // -------------------------------------------------------------
   // 9. 启动全套能力
   // -------------------------------------------------------------
+  ThemeManager.init();
   initFormulaCopy();
   initTrancySelection();
   initKeyboardShortcuts();

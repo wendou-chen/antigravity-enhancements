@@ -113,7 +113,7 @@ async function runSmokeTest() {
     hasGlobalConfig: Boolean(window.__TRANCY_GLOBAL_CONFIG__)
   })`);
 
-  if (domState.hasStyle && domState.styleVersion === '2.5.0') {
+  if (domState.hasStyle && domState.styleVersion === '2.6.0') {
     logPass(`样式表注入就绪，版本对齐: v${domState.styleVersion}`);
   } else {
     logFail(`样式表状态异常: ${JSON.stringify(domState)}`);
@@ -222,6 +222,50 @@ async function runSmokeTest() {
     logPass(`Trancy 官方云端生词本双向对齐成功 (云端生词秒级流入本地)`);
   } else {
     logFail('Trancy 官方云端生词本同步失败');
+  }
+
+  // 门禁 9：外观主题自适应 (ThemeManager) 与浅深切换验证
+  console.log('\n[门禁 9: 外观主题自适应与浅色明亮/深色暗黑双向切换]');
+  const themeCheck = await evalInPage(`(() => {
+    const tm = window.__ANTI_THEME_MANAGER__;
+    if (!tm) return { error: 'NO_THEME_MANAGER' };
+
+    const detected = tm.detectHostTheme();
+    const initialMode = tm.currentMode;
+    const initialResolved = tm.getResolvedTheme();
+
+    // 1. 切换到强制浅色
+    tm.currentMode = 'light';
+    tm.apply();
+    const isLightApplied = document.documentElement.getAttribute('data-anti-theme') === 'light' &&
+                           document.body.getAttribute('data-anti-theme') === 'light';
+
+    // 2. 切换到强制深色
+    tm.currentMode = 'dark';
+    tm.apply();
+    const isDarkApplied = document.documentElement.getAttribute('data-anti-theme') === 'dark' &&
+                          document.body.getAttribute('data-anti-theme') === 'dark';
+
+    // 3. 恢复到 initialMode (通常为 auto)
+    tm.currentMode = initialMode;
+    tm.apply();
+    const isRestored = document.documentElement.getAttribute('data-anti-theme') === initialResolved;
+
+    return {
+      hasTm: true,
+      detected,
+      initialMode,
+      initialResolved,
+      isLightApplied,
+      isDarkApplied,
+      isRestored
+    };
+  })()`);
+
+  if (themeCheck && themeCheck.hasTm && themeCheck.isLightApplied && themeCheck.isDarkApplied && themeCheck.isRestored) {
+    logPass(`ThemeManager 自适应就绪: 宿主探针识别为 [${themeCheck.detected}], 浅色/深色双向热切换与属性同步校验 100% 成功`);
+  } else {
+    logFail(`ThemeManager 验证异常: ${JSON.stringify(themeCheck)}`);
   }
 
   ws.close();
