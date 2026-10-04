@@ -1,9 +1,142 @@
-/* Antigravity Web Enhancements Client Styles (v2.6.0) */
+/* Antigravity Web Enhancements Client Styles (v2.7.0) */
 
 /* =============================================================
-   0. 主题变量系统 (自适应 Antigravity 宿主 + 支持强制明亮/暗黑)
+   0. 主题变量系统 (反重力羊皮纸暖色 / 纯白明亮 / 沉浸暗黑 三大主题自由切换)
    ============================================================= */
-:root, [data-anti-theme="dark"] {
+
+/* -------------------------------------------------------------
+   0.1 反重力原宿主主题 (Antigravity Solarized Warm 羊皮纸护眼暖色 - 默认)
+   契合反重力宿主当前界面的 #FAF4E5 暖色底，护眼温润，彻底消除纯白刺眼感
+   ------------------------------------------------------------- */
+:root, [data-anti-theme="anti"] {
+  --anti-chat-max-width: 896px;
+
+  /* 容器与卡片：温润暖象牙羊皮纸色，与 #FAF4E5 宿主背景浑然天成 */
+  --anti-card-bg: rgba(251, 247, 238, 0.97);
+  --anti-card-border: rgba(180, 160, 130, 0.32);
+  --anti-card-shadow: 0 16px 36px -4px rgba(85, 65, 30, 0.12), 0 4px 14px rgba(85, 65, 30, 0.06);
+  --anti-card-text: #383A42;
+
+  /* 标题与音标 (温暖炭黑标题 + 暖象牙灰小胶囊) */
+  --anti-word-color: #2E3440;
+  --anti-phonetic-bg: #ECE4D0;
+  --anti-phonetic-color: #685E4E;
+
+  /* 按钮与交互 */
+  --anti-btn-border: rgba(180, 160, 130, 0.28);
+  --anti-btn-color: #685E4E;
+  --anti-btn-hover-bg: #EFE7D5;
+  --anti-btn-hover-color: #2E3440;
+
+  /* 词性与释义条目 (反重力同款暖色调分词性标签) */
+  --anti-trans-text: #2E3440;
+  --anti-terms-color: #435155;
+  --anti-pos-n-bg: #EAE5F5;
+  --anti-pos-n-color: #52408C;
+  --anti-pos-v-bg: #E2EFE7;
+  --anti-pos-v-color: #246D50;
+  --anti-pos-adj-bg: #F7EAD7;
+  --anti-pos-adj-color: #945B17;
+  --anti-pos-web-bg: #E0E8F5;
+  --anti-pos-web-color: #355C8A;
+  --anti-pos-default-bg: #ECE4D0;
+  --anti-pos-default-color: #685E4E;
+
+  /* AI 语境消歧行 (微透暖底 + 旋转光晕 + 暖深蓝消歧释义) */
+  --anti-ai-row-bg: rgba(244, 238, 223, 0.7);
+  --anti-ai-row-border: rgba(180, 160, 130, 0.25);
+  --anti-ai-pos-bg: #FAF4E5;
+  --anti-ai-pos-color: #2E3440;
+  --anti-ai-text-color: #215982;
+
+  /* 底部与标签 */
+  --anti-footer-border: rgba(180, 160, 130, 0.22);
+  --anti-footer-text: #8C8070;
+  --anti-engine-tag-bg: #E4ECF7;
+  --anti-engine-tag-color: #2B629B;
+
+  /* 悬浮球 FAB (暖色底色，不再突兀纯白！) */
+  --anti-fab-bg: rgba(251, 247, 238, 0.95);
+  --anti-fab-border: rgba(180, 160, 130, 0.38);
+  --anti-fab-color: #435155;
+  --anti-menu-bg: rgba(251, 247, 238, 0.98);
+  --anti-menu-border: rgba(180, 160, 130, 0.38);
+  --anti-menu-item-hover: rgba(180, 160, 130, 0.14);
+
+  /* Toast 提示 */
+  --anti-toast-bg: rgba(251, 247, 238, 0.98);
+  --anti-toast-border: rgba(180, 160, 130, 0.38);
+  --anti-toast-color: #383A42;
+}
+
+/* -------------------------------------------------------------
+   0.2 纯白明亮主题 (Pure Light 纯白天光雪白)
+   ------------------------------------------------------------- */
+[data-anti-theme="light"] {
+  --anti-chat-max-width: 896px;
+
+  /* 容器与卡片 */
+  --anti-card-bg: rgba(255, 255, 255, 0.98);
+  --anti-card-border: rgba(0, 0, 0, 0.09);
+  --anti-card-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.13), 0 4px 14px rgba(0, 0, 0, 0.06);
+  --anti-card-text: #111827;
+
+  /* 标题与音标 (大黑字 OCR + 浅灰胶囊 US) */
+  --anti-word-color: #111827;
+  --anti-phonetic-bg: #F3F4F6;
+  --anti-phonetic-color: #4B5563;
+
+  /* 按钮与交互 */
+  --anti-btn-border: rgba(0, 0, 0, 0.08);
+  --anti-btn-color: #6B7280;
+  --anti-btn-hover-bg: #F3F4F6;
+  --anti-btn-hover-color: #111827;
+
+  /* 词性与释义条目 (淡紫/深紫标签 + 清晰深黑字) */
+  --anti-trans-text: #111827;
+  --anti-terms-color: #1F2937;
+  --anti-pos-n-bg: #EEF2FF;
+  --anti-pos-n-color: #4F46E5;
+  --anti-pos-v-bg: #ECFDF5;
+  --anti-pos-v-color: #059669;
+  --anti-pos-adj-bg: #FEF3C7;
+  --anti-pos-adj-color: #D97706;
+  --anti-pos-web-bg: #F3E8FF;
+  --anti-pos-web-color: #7E22CE;
+  --anti-pos-default-bg: #F3F4F6;
+  --anti-pos-default-color: #6B7280;
+
+  /* AI 语境消歧行 (白底 + 渐变边框 + 纯正深字) */
+  --anti-ai-row-bg: rgba(243, 244, 246, 0.65);
+  --anti-ai-row-border: rgba(0, 0, 0, 0.05);
+  --anti-ai-pos-bg: #FFFFFF;
+  --anti-ai-pos-color: #111827;
+  --anti-ai-text-color: #0369A1;
+
+  /* 底部与标签 */
+  --anti-footer-border: rgba(0, 0, 0, 0.06);
+  --anti-footer-text: #9CA3AF;
+  --anti-engine-tag-bg: #EFF6FF;
+  --anti-engine-tag-color: #2563EB;
+
+  /* 悬浮球 FAB */
+  --anti-fab-bg: rgba(255, 255, 255, 0.94);
+  --anti-fab-border: rgba(0, 0, 0, 0.12);
+  --anti-fab-color: #1F2937;
+  --anti-menu-bg: rgba(255, 255, 255, 0.98);
+  --anti-menu-border: rgba(0, 0, 0, 0.12);
+  --anti-menu-item-hover: rgba(0, 0, 0, 0.05);
+
+  /* Toast 提示 */
+  --anti-toast-bg: rgba(255, 255, 255, 0.98);
+  --anti-toast-border: rgba(0, 0, 0, 0.12);
+  --anti-toast-color: #111827;
+}
+
+/* -------------------------------------------------------------
+   0.3 沉浸暗黑主题 (Dark 曜石深黑夜间模式)
+   ------------------------------------------------------------- */
+[data-anti-theme="dark"] {
   --anti-chat-max-width: 896px;
 
   /* 容器与卡片 */
@@ -62,66 +195,6 @@
   --anti-toast-bg: rgba(26, 27, 30, 0.95);
   --anti-toast-border: rgba(255, 255, 255, 0.15);
   --anti-toast-color: #F8FAFC;
-}
-
-/* 浅色主题 (Light Mode - 1:1 像素级复刻官方卡片与契合 Antigravity 浅色底) */
-[data-anti-theme="light"] {
-  /* 容器与卡片 */
-  --anti-card-bg: rgba(255, 255, 255, 0.98);
-  --anti-card-border: rgba(0, 0, 0, 0.09);
-  --anti-card-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.13), 0 4px 14px rgba(0, 0, 0, 0.06);
-  --anti-card-text: #111827;
-
-  /* 标题与音标 (大黑字 OCR + 浅灰胶囊 US) */
-  --anti-word-color: #111827;
-  --anti-phonetic-bg: #F3F4F6;
-  --anti-phonetic-color: #4B5563;
-
-  /* 按钮与交互 */
-  --anti-btn-border: rgba(0, 0, 0, 0.08);
-  --anti-btn-color: #6B7280;
-  --anti-btn-hover-bg: #F3F4F6;
-  --anti-btn-hover-color: #111827;
-
-  /* 词性与释义条目 (淡紫/深紫标签 + 清晰深黑字) */
-  --anti-trans-text: #111827;
-  --anti-terms-color: #1F2937;
-  --anti-pos-n-bg: #EEF2FF;
-  --anti-pos-n-color: #4F46E5;
-  --anti-pos-v-bg: #ECFDF5;
-  --anti-pos-v-color: #059669;
-  --anti-pos-adj-bg: #FEF3C7;
-  --anti-pos-adj-color: #D97706;
-  --anti-pos-web-bg: #F3E8FF;
-  --anti-pos-web-color: #7E22CE;
-  --anti-pos-default-bg: #F3F4F6;
-  --anti-pos-default-color: #6B7280;
-
-  /* AI 语境消歧行 (白底 + 渐变边框 + 纯正深字) */
-  --anti-ai-row-bg: rgba(243, 244, 246, 0.65);
-  --anti-ai-row-border: rgba(0, 0, 0, 0.05);
-  --anti-ai-pos-bg: #FFFFFF;
-  --anti-ai-pos-color: #111827;
-  --anti-ai-text-color: #0369A1;
-
-  /* 底部与标签 */
-  --anti-footer-border: rgba(0, 0, 0, 0.06);
-  --anti-footer-text: #9CA3AF;
-  --anti-engine-tag-bg: #EFF6FF;
-  --anti-engine-tag-color: #2563EB;
-
-  /* 悬浮球 FAB */
-  --anti-fab-bg: rgba(255, 255, 255, 0.94);
-  --anti-fab-border: rgba(0, 0, 0, 0.12);
-  --anti-fab-color: #1F2937;
-  --anti-menu-bg: rgba(255, 255, 255, 0.98);
-  --anti-menu-border: rgba(0, 0, 0, 0.12);
-  --anti-menu-item-hover: rgba(0, 0, 0, 0.05);
-
-  /* Toast 提示 */
-  --anti-toast-bg: rgba(255, 255, 255, 0.98);
-  --anti-toast-border: rgba(0, 0, 0, 0.12);
-  --anti-toast-color: #111827;
 }
 
 html, body {

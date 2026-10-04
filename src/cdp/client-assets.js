@@ -22,14 +22,15 @@ function getClientInjectionScript() {
     }
 
     // 1. Inject or Update Styles
+    var CURRENT_VERSION = '2.7.0';
     var existingStyle = document.getElementById('anti-enhancements-style');
     if (!existingStyle) {
       var style = document.createElement('style');
-      style.id = 'anti-enhancements-style'; style.setAttribute('data-version', '2.6.0');
+      style.id = 'anti-enhancements-style'; style.setAttribute('data-version', CURRENT_VERSION);
       style.textContent = ${JSON.stringify(css)};
       (document.head || document.documentElement).appendChild(style);
     } else {
-      existingStyle.setAttribute('data-version', '2.6.0'); existingStyle.textContent = ${JSON.stringify(css)};
+      existingStyle.setAttribute('data-version', CURRENT_VERSION); existingStyle.textContent = ${JSON.stringify(css)};
     }
 
     // 2. Inject Client Script

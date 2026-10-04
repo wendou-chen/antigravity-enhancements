@@ -208,28 +208,28 @@ Trancy 客户端对 AI 上下文消歧项采用了一套标志性的视觉语言
 
 ---
 
-## 八、Antigravity 宿主主题探测与浅深双向自适应架构
+## 八、Antigravity 宿主主题色谱与三大独立主题架构 (v2.7.0)
 
-### 1. 宿主主题探针判据
-- **Class 契约**：Antigravity 在 `document.body` 挂载了 `theme-light` 与 `theme-dark` 两个标准 class（例如 Solarized Light 下为 `theme-standalone theme-light`）；
-- **RGB 亮度兜底计算**：
-  ```javascript
-  const bg = window.getComputedStyle(document.body).backgroundColor;
-  // 解析 rgb(r, g, b)
-  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-  const isLight = luminance > 140; // >140 判定为浅色，否则深色
-  ```
-- **实时平滑联动**：挂载 `MutationObserver(document.body, { attributes: true, attributeFilter: ['class', 'style'] })`，宿主切换主题时 0ms 自动感知。
+### 1. 宿主实机色谱探针采样
+- **主区域背景 (`bodyBg`)**：`rgb(250, 244, 229)`（`#FAF4E5`，Solarized Light 经典底色 `base3`）；
+- **主正文文字 (`bodyColor`)**：`rgb(67, 81, 85)`（`#435155`，深暖炭灰文字色 `base00`）；
+- **侧边栏背景 (`sidebarBg`)**：`color(srgb 0.955882 0.932941 0.875588)`（`#F4EEDF`，温暖浅驼色）；
+- **活跃选中国色**：`rgb(229, 223, 210)`（`#E5DFD2`）；
+- **边框与分隔线**：`rgba(0, 0, 0, 0.075)` 与 `rgba(180, 160, 130, 0.32)`。
 
-### 2. 样式变量分流与 1:1 排版复刻
-- **变量分流契约**：在根选择器上通过 `[data-anti-theme="light"]` 与 `[data-anti-theme="dark"]` 分离全套卡片变量；
-- **浅色明亮排版（1:1 复刻截图）**：
-  - 卡片背景：`#FFFFFF` 纯白，边框 `1px solid rgba(0, 0, 0, 0.09)`；
-  - 单词大标题：加粗纯黑字 `#111827`；
-  - 音标徽标：浅灰底小胶囊 `#F3F4F6`，文字 `#4B5563`；
-  - 词性标签：分词性独立着色（`n.` 紫底 `#EEF2FF` / 深紫字 `#4F46E5`；`web.` 蓝底 `#F3E8FF`；`v.` 绿底 `#ECFDF5`）；
-  - AI 语境消歧：白底方形徽标 + `conic-gradient` 旋转彩色光晕边框 + `#0369A1` 高亮中文释义；
-  - 手动切换状态持久化于 `safeStorage` 的 `anti_enhance_theme_mode`（`auto` / `light` / `dark`）。
+### 2. 三大主题矩阵 (`ThemeManager`)
+- **反重力暖色 (`anti` - 默认)**：
+  - 卡片底色：`rgba(251, 247, 238, 0.97)`（暖象牙羊皮纸色，比 `#FAF4E5` 略提亮以产生精致的物理悬浮层次感）；
+  - 边框：`rgba(180, 160, 130, 0.32)`，阴影采用暖棕柔和投影 `rgba(85, 65, 30, 0.12)`；
+  - 悬浮控制球 (FAB)：同步采用反重力同款暖色 `rgba(251, 247, 238, 0.95)`，与宿主浑然一体，消除纯白刺眼突兀感；
+  - 词性标签：暖调淡紫（`n.`）、暖调淡蓝（`web.`）、暖调淡绿（`v.`）、暖调琥珀（`adj.`）。
+- **纯白明亮 (`light`)**：
+  - 现代冷调纯白卡片 `#FFFFFF`、灰色边框 `rgba(0, 0, 0, 0.09)` 与加黑字体 `#111827`。
+- **沉浸暗黑 (`dark`)**：
+  - 曜石暗黑夜间卡片 `rgba(22, 23, 27, 0.94)`、暗色微透边框与浅白字体 `#F8FAFC`。
+- **控制与持久化**：
+  - FAB 控制中心外观主题支持点击循环热切换：`反重力` ➔ `纯白` ➔ `暗黑` ➔ `反重力`；
+  - 持久化至 `safeStorage`（`anti_enhance_theme_mode`），开机与启动 0ms 直出用户偏好。
 
 
 

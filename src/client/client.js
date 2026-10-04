@@ -163,38 +163,17 @@
   }
 
   // -------------------------------------------------------------
-  // 1.5 ThemeManager: 外观主题自适应与切换管理 (智能跟随宿主 / 浅色明亮 / 深色暗黑)
+  // 1.5 ThemeManager: 外观主题管理 (反重力羊皮纸暖色 / 纯白明亮 / 沉浸暗黑 三大主题自由切换)
   // -------------------------------------------------------------
   const ThemeManager = {
     MODE_KEY: 'anti_enhance_theme_mode',
-    currentMode: 'auto', // 'auto' | 'light' | 'dark'
-
-    detectHostTheme() {
-      // 1. 宿主 class 判定
-      if (document.body && document.body.classList) {
-        if (document.body.classList.contains('theme-light')) return 'light';
-        if (document.body.classList.contains('theme-dark')) return 'dark';
-      }
-      // 2. 背景色亮度计算判定
-      try {
-        const bg = window.getComputedStyle(document.body).backgroundColor;
-        const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-        if (match) {
-          const r = parseInt(match[1], 10);
-          const g = parseInt(match[2], 10);
-          const b = parseInt(match[3], 10);
-          const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-          return luminance > 140 ? 'light' : 'dark';
-        }
-      } catch (e) {}
-      return 'light';
-    },
+    currentMode: 'anti', // 'anti' (反重力羊皮纸暖色 - 默认) | 'light' (纯白明亮) | 'dark' (沉浸暗黑)
 
     getResolvedTheme() {
-      if (this.currentMode === 'auto') {
-        return this.detectHostTheme();
+      if (['anti', 'light', 'dark'].includes(this.currentMode)) {
+        return this.currentMode;
       }
-      return this.currentMode;
+      return 'anti';
     },
 
     apply() {
@@ -205,12 +184,15 @@
       } catch (e) {}
       const badge = document.getElementById('anti-fab-theme');
       if (badge) {
-        if (this.currentMode === 'auto') {
-          badge.textContent = `跟随 (${resolved === 'light' ? '浅' : '深'})`;
+        if (this.currentMode === 'anti') {
+          badge.textContent = '反重力';
+          badge.className = 'anti-fab-badge is-active';
         } else if (this.currentMode === 'light') {
-          badge.textContent = '浅色明亮';
+          badge.textContent = '纯白';
+          badge.className = 'anti-fab-badge';
         } else {
-          badge.textContent = '深色暗黑';
+          badge.textContent = '暗黑';
+          badge.className = 'anti-fab-badge is-active';
         }
       }
       // 同步当前卡片
@@ -221,37 +203,31 @@
     },
 
     cycle() {
-      if (this.currentMode === 'auto') {
+      // 循环切换：反重力暖色 -> 纯白明亮 -> 沉浸暗黑 -> 反重力暖色
+      if (this.currentMode === 'anti') {
         this.currentMode = 'light';
       } else if (this.currentMode === 'light') {
         this.currentMode = 'dark';
       } else {
-        this.currentMode = 'auto';
+        this.currentMode = 'anti';
       }
       safeStorage.setItem(this.MODE_KEY, this.currentMode);
       this.apply();
-      let modeText = '跟随反重力宿主';
-      if (this.currentMode === 'light') modeText = '强制浅色明亮';
-      else if (this.currentMode === 'dark') modeText = '强制深色暗黑';
+
+      let modeText = '反重力暖色 (羊皮纸护眼)';
+      if (this.currentMode === 'light') modeText = '纯白明亮';
+      else if (this.currentMode === 'dark') modeText = '沉浸暗黑';
       showToast('🎨 外观主题', `已切换为：${modeText}`);
     },
 
     init() {
       const saved = safeStorage.getItem(this.MODE_KEY);
-      if (saved && ['auto', 'light', 'dark'].includes(saved)) {
+      if (saved && ['anti', 'light', 'dark'].includes(saved)) {
         this.currentMode = saved;
+      } else {
+        this.currentMode = 'anti'; // 默认直接采用反重力同款暖色！
       }
       this.apply();
-
-      try {
-        const observer = new MutationObserver(() => {
-          if (this.currentMode === 'auto') {
-            this.apply();
-          }
-        });
-        observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
-        cleanups.push(() => observer.disconnect());
-      } catch (e) {}
     }
   };
   window.__ANTI_THEME_MANAGER__ = ThemeManager;
@@ -1479,7 +1455,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.6.0 VIP</span>
+          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.7.0 VIP</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="plan-mode" title="按 Shift+Tab 或 Alt+P 快速切换">
@@ -1490,12 +1466,12 @@
           <span class="anti-fab-badge" id="anti-fab-plan-mode">标准</span>
         </button>
 
-        <button class="anti-fab-menu-item" data-action="theme" title="点击循环切换外观主题：跟随宿主 / 浅色明亮 / 深色暗黑">
+        <button class="anti-fab-menu-item" data-action="theme" title="点击循环切换外观主题：反重力暖色 / 纯白明亮 / 沉浸暗黑">
           <div class="anti-fab-item-left">
             <span>🎨</span>
             <span>外观主题</span>
           </div>
-          <span class="anti-fab-badge" id="anti-fab-theme">跟随</span>
+          <span class="anti-fab-badge is-active" id="anti-fab-theme">反重力</span>
         </button>
 
         <button class="anti-fab-menu-item" data-action="trancy">

@@ -113,7 +113,7 @@ async function runSmokeTest() {
     hasGlobalConfig: Boolean(window.__TRANCY_GLOBAL_CONFIG__)
   })`);
 
-  if (domState.hasStyle && domState.styleVersion === '2.6.0') {
+  if (domState.hasStyle && domState.styleVersion === '2.7.0') {
     logPass(`样式表注入就绪，版本对齐: v${domState.styleVersion}`);
   } else {
     logFail(`样式表状态异常: ${JSON.stringify(domState)}`);
@@ -224,46 +224,46 @@ async function runSmokeTest() {
     logFail('Trancy 官方云端生词本同步失败');
   }
 
-  // 门禁 9：外观主题自适应 (ThemeManager) 与浅深切换验证
-  console.log('\n[门禁 9: 外观主题自适应与浅色明亮/深色暗黑双向切换]');
+  // 门禁 9：外观主题 (ThemeManager) 反重力暖色/纯白明亮/沉浸暗黑三向切换验证
+  console.log('\n[门禁 9: 反重力暖色 / 纯白明亮 / 沉浸暗黑 三大主题自由切换验证]');
   const themeCheck = await evalInPage(`(() => {
     const tm = window.__ANTI_THEME_MANAGER__;
     if (!tm) return { error: 'NO_THEME_MANAGER' };
 
-    const detected = tm.detectHostTheme();
-    const initialMode = tm.currentMode;
-    const initialResolved = tm.getResolvedTheme();
+    // 1. 切换到反重力同款暖色 (anti)
+    tm.currentMode = 'anti';
+    tm.apply();
+    const isAntiApplied = document.documentElement.getAttribute('data-anti-theme') === 'anti' &&
+                          document.getElementById('anti-fab-theme')?.textContent === '反重力';
 
-    // 1. 切换到强制浅色
+    // 2. 切换到纯白明亮 (light)
     tm.currentMode = 'light';
     tm.apply();
     const isLightApplied = document.documentElement.getAttribute('data-anti-theme') === 'light' &&
-                           document.body.getAttribute('data-anti-theme') === 'light';
+                           document.getElementById('anti-fab-theme')?.textContent === '纯白';
 
-    // 2. 切换到强制深色
+    // 3. 切换到沉浸暗黑 (dark)
     tm.currentMode = 'dark';
     tm.apply();
     const isDarkApplied = document.documentElement.getAttribute('data-anti-theme') === 'dark' &&
-                          document.body.getAttribute('data-anti-theme') === 'dark';
+                          document.getElementById('anti-fab-theme')?.textContent === '暗黑';
 
-    // 3. 恢复到 initialMode (通常为 auto)
-    tm.currentMode = initialMode;
+    // 4. 恢复为用户首选的反重力同款暖色
+    tm.currentMode = 'anti';
     tm.apply();
-    const isRestored = document.documentElement.getAttribute('data-anti-theme') === initialResolved;
+    const isRestoredAnti = document.documentElement.getAttribute('data-anti-theme') === 'anti';
 
     return {
       hasTm: true,
-      detected,
-      initialMode,
-      initialResolved,
+      isAntiApplied,
       isLightApplied,
       isDarkApplied,
-      isRestored
+      isRestoredAnti
     };
   })()`);
 
-  if (themeCheck && themeCheck.hasTm && themeCheck.isLightApplied && themeCheck.isDarkApplied && themeCheck.isRestored) {
-    logPass(`ThemeManager 自适应就绪: 宿主探针识别为 [${themeCheck.detected}], 浅色/深色双向热切换与属性同步校验 100% 成功`);
+  if (themeCheck && themeCheck.hasTm && themeCheck.isAntiApplied && themeCheck.isLightApplied && themeCheck.isDarkApplied && themeCheck.isRestoredAnti) {
+    logPass('ThemeManager 三主题就绪: [反重力暖色] / [纯白明亮] / [沉浸暗黑] 三向热切换与 DOM 属性、Badge 同步 100% 成功');
   } else {
     logFail(`ThemeManager 验证异常: ${JSON.stringify(themeCheck)}`);
   }
