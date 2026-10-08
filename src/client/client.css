@@ -994,6 +994,12 @@ html.anti-width-resizing .w-full.animate-fade-in:has([contenteditable="true"]) {
   transform: translateX(0);
 }
 
+/* 抽屉打开时，右下角 FAB 悬浮球向左避让，防止遮挡画板内容与底部快捷键提示 */
+body:has(.anti-desmos-drawer.open) .anti-fab-container {
+  right: 504px !important;
+  transition: right 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
 /* 抽屉顶部工具栏 */
 .anti-desmos-header {
   display: flex;

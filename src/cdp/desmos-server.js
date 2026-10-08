@@ -50,7 +50,9 @@ class DesmosServer {
   stop() {
     if (this.server) {
       try {
-        this.server.close();
+        if (this.isRunning) {
+          this.server.close();
+        }
       } catch {}
       this.server = null;
     }
@@ -121,12 +123,18 @@ class DesmosServer {
           const parsed = JSON.parse(body || '{}');
           const rawExprs = parsed.expressions || [];
 
+          const is3D = (item) => {
+            if (!item) return false;
+            const str = typeof item === 'object' && item !== null ? (item.latex || item.expr || '') : String(item);
+            const s = str.replace(/\s+/g, '');
+            if (/\([a-zA-Z0-9+\-*/.]+,[a-zA-Z0-9+\-*/.]+,[a-zA-Z0-9+\-*/.]+\)/.test(s)) return true;
+            if (/(?:^|[^a-zA-Z\\])[zZ](?:[^a-zA-Z]|$)/.test(s)) return true;
+            return false;
+          };
+
           let targetDim = parsed.dimension || 'auto';
           if (targetDim === 'auto') {
-            const has3D = rawExprs.some(e => {
-              const latex = (e.latex || e.expr || '').replace(/\s+/g, '');
-              return /\bz\b|[zZ]=|=[zZ]|\+z\^|\+z_|\([a-zA-Z0-9+\-*/.]+,[a-zA-Z0-9+\-*/.]+,[a-zA-Z0-9+\-*/.]+\)/.test(latex);
-            });
+            const has3D = rawExprs.some(is3D);
             targetDim = has3D ? '3d' : '2d';
           }
 
@@ -134,6 +142,8 @@ class DesmosServer {
           let updatedExpressions = [];
           if (action === 'clear') {
             updatedExpressions = [];
+          } else if (action === 'setDimension') {
+            updatedExpressions = this.currentPlotState.expressions;
           } else if (action === 'append') {
             updatedExpressions = [...this.currentPlotState.expressions, ...rawExprs];
           } else {

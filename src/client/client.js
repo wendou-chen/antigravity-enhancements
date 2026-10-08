@@ -1241,6 +1241,30 @@
     return '';
   }
 
+  function cleanLatexForDesmos(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    let s = raw.trim();
+    // 移除外层 $$ 或 $ 包裹
+    s = s.replace(/^\$\$([\s\S]*)\$\$$/, '$1').replace(/^\$([\s\S]*)\$$/, '$1').trim();
+    // 移除 KaTeX display 模式前缀 \displaystyle 与 \textstyle
+    s = s.replace(/\\displaystyle\s*/g, '').replace(/\\textstyle\s*/g, '');
+    // 移除行末公式标点符号（如逗号、句号、分号）
+    s = s.replace(/[,;.\s]+$/, '').trim();
+    return s;
+  }
+
+  function isGraphableLatex(latex) {
+    if (!latex || typeof latex !== 'string') return false;
+    const s = latex.trim();
+    if (s.length < 2) return false;
+    // 过滤逻辑推导符号与环境（箭头、包含、属于、全称量词、矩阵环境等）
+    if (/\\(?:to|rightarrow|longrightarrow|longleftrightarrow|stackrel|implies|iff|in|subset|forall|exists|mathbb|begin\{)\b/.test(s)) {
+      return false;
+    }
+    // 包含数学变量 (x, y, z, t, r, theta) 或等号或标准初等函数
+    return /[xyztr\theta]/i.test(s) || /=/.test(s) || /\\(?:sin|cos|tan|cot|sec|csc|ln|log|exp|sqrt)\b/.test(s);
+  }
+
   function initFormulaCopy() {
     const onDocClick = (e) => {
       if (!state.formulaCopyEnabled) return;
@@ -1251,12 +1275,20 @@
       if (latex) {
         e.preventDefault();
         e.stopPropagation();
-        navigator.clipboard.writeText(latex).then(() => {
-          showToast('LaTeX 公式已复制 & 画板联动', latex.length > 40 ? latex.slice(0, 40) + '...' : latex);
-        });
-        // KaTeX 即点即画：联动 Desmos 画板
-        if (window.__ANTI_DESMOS__) {
-          window.__ANTI_DESMOS__.plot(latex);
+        const clean = cleanLatexForDesmos(latex);
+        const copyText = clean || latex;
+        try {
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            navigator.clipboard.writeText(copyText).catch(() => {});
+          }
+        } catch {}
+
+        const canGraph = isGraphableLatex(clean);
+        if (canGraph && window.__ANTI_DESMOS__) {
+          showToast('LaTeX 公式已复制 & 画板联动', copyText.length > 40 ? copyText.slice(0, 40) + '...' : copyText);
+          window.__ANTI_DESMOS__.plot(clean);
+        } else {
+          showToast('LaTeX 公式已复制', copyText.length > 40 ? copyText.slice(0, 40) + '...' : copyText);
         }
       }
     };
@@ -1550,11 +1582,11 @@
   // -------------------------------------------------------------
   function autoFixContinuousLatex(latex) {
     if (!latex || typeof latex !== 'string') return '';
-    let s = latex.trim();
+    let s = cleanLatexForDesmos(latex);
     if (s.includes('\\left\\{') || s.includes('\\{') || s.includes(':')) {
       return s;
     }
-    const fracPattern = /^(?:y\s*=\s*)?\\frac\{\\sin(?:\(([^)]+)\)|\s*([a-zA-Z0-9.+*-]+))\s*\}\{x\}$/;
+    const fracPattern = /^(?:y\s*=\s*)?\\(?:frac|dfrac)\{\\sin(?:\(([^)]+)\)|\s*([a-zA-Z0-9.+*-]+))\s*\}\{x\}$/;
     const m1 = s.match(fracPattern);
     if (m1) {
       const rawArg = (m1[1] || m1[2] || '').trim();
@@ -1576,9 +1608,13 @@
   }
 
   function is3DFormula(formula) {
-    if (!formula || typeof formula !== 'string') return false;
-    const s = formula.replace(/\s+/g, '');
-    return /\bz\b|[zZ]=|=[zZ]|\+z\^|\+z_|\([a-zA-Z0-9+\-*/.]+,[a-zA-Z0-9+\-*/.]+,[a-zA-Z0-9+\-*/.]+\)/.test(s);
+    if (!formula) return false;
+    const str = typeof formula === 'object' && formula !== null ? (formula.latex || formula.expr || '') : String(formula);
+    if (!str || typeof str !== 'string') return false;
+    const s = str.replace(/\s+/g, '');
+    if (/\([a-zA-Z0-9+\-*/.]+,[a-zA-Z0-9+\-*/.]+,[a-zA-Z0-9+\-*/.]+\)/.test(s)) return true;
+    if (/(?:^|[^a-zA-Z\\])[zZ](?:[^a-zA-Z]|$)/.test(s)) return true;
+    return false;
   }
 
   const DesmosScriptLoader = {
@@ -1593,9 +1629,8 @@
         if (typeof window !== 'undefined' && window.Desmos) return resolve(window.Desmos);
         const existing = document.querySelector('script[data-desmos-api]');
         if (existing) {
-          existing.addEventListener('load', () => resolve(window.Desmos));
-          existing.addEventListener('error', (e) => reject(e));
-          return;
+          if (window.Desmos) return resolve(window.Desmos);
+          existing.remove();
         }
         const script = document.createElement('script');
         script.setAttribute('data-desmos-api', 'true');
@@ -1604,6 +1639,7 @@
           if (window.Desmos) {
             resolve(window.Desmos);
           } else {
+            this._promise = null;
             reject(new Error('window.Desmos not found after script load'));
           }
         };
@@ -1627,6 +1663,14 @@
 
     init() {
       this.renderDrawer();
+      cleanups.push(() => {
+        try {
+          if (this.calc && typeof this.calc.destroy === 'function') {
+            this.calc.destroy();
+            this.calc = null;
+          }
+        } catch {}
+      });
     },
 
     renderDrawer() {
@@ -1760,21 +1804,50 @@
 
     async setDimension(dim) {
       if (dim !== '2d' && dim !== '3d') return;
+      if (this.dimension === dim && this.calc) return;
+
+      const previousDim = this.dimension;
       await this.ensureCalculator(dim);
-      if (this.expressions.length === 0) {
-        if (dim === '3d') {
-          this.calc.setExpression({ id: 'surf_init', latex: 'z=x^2-y^2', color: '#2563eb' });
-        } else {
+
+      // 从 3D 切到 2D：过滤 3D 专属曲面公式以避免 2D 引擎报错
+      if (dim === '2d' && previousDim === '3d') {
+        const valid2d = this.expressions.filter(e => !is3DFormula(e.latex));
+        if (valid2d.length === 0) {
+          try { this.calc.setBlank(); } catch {}
           this.calc.setExpression({ id: 'expr_init', latex: 'y=\\sin(x)', color: '#2563eb', lineWidth: 3.5 });
           try { this.calc.setMathBounds({ left: -6.28, right: 6.28, bottom: -2, top: 2 }); } catch {}
+          this.expressions = [{ id: 'expr_init', latex: 'y=\\sin(x)', color: '#2563eb', lineWidth: 3.5 }];
+        } else {
+          try { this.calc.setBlank(); } catch {}
+          valid2d.forEach(e => { try { this.calc.setExpression(e); } catch {} });
+          this.expressions = valid2d;
+        }
+      } else if (dim === '3d' && previousDim === '2d') {
+        // 从 2D 切到 3D 且当前是默认 2D 正弦波时，优雅过渡为 3D 马鞍面
+        if (this.expressions.length === 1 && this.expressions[0].latex.includes('\\sin(x)')) {
+          try { this.calc.setBlank(); } catch {}
+          this.calc.setExpression({ id: 'surf_init', latex: 'z=x^2-y^2', color: '#2563eb' });
+          this.expressions = [{ id: 'surf_init', latex: 'z=x^2-y^2', color: '#2563eb' }];
         }
       }
+
+      this.updateStatus(dim === '3d' ? '3D 空间就绪' : '2D 平面就绪');
     },
 
     openDrawer() {
       if (!this.drawerEl) this.renderDrawer();
       this.drawerEl.classList.add('open');
       this.isOpen = true;
+
+      // 自动避让右下角悬浮球，防止遮挡抽屉
+      const fab = document.querySelector('.anti-fab-container');
+      if (fab) {
+        if (!fab.dataset.originalRight) {
+          fab.dataset.originalRight = fab.style.right || '';
+        }
+        fab.style.right = '504px';
+      }
+
       this.ensureCalculator(this.dimension).then(() => {
         setTimeout(() => { try { this.calc?.resize?.(); } catch {} }, 100);
       });
@@ -1785,6 +1858,13 @@
         this.drawerEl.classList.remove('open');
       }
       this.isOpen = false;
+
+      // 抽屉关闭时还原悬浮球位置
+      const fab = document.querySelector('.anti-fab-container');
+      if (fab && fab.dataset.originalRight !== undefined) {
+        fab.style.right = fab.dataset.originalRight;
+        delete fab.dataset.originalRight;
+      }
     },
 
     toggleDrawer() {
@@ -1797,14 +1877,11 @@
 
     async plot(formulas, options = {}) {
       const rawList = Array.isArray(formulas) ? formulas : [formulas];
-      if (rawList.length === 0) return;
+      if (rawList.length === 0) return { success: false, reason: 'EMPTY_FORMULAS' };
 
       let targetDim = options.dimension || (options.threeD ? '3d' : (options.twoD ? '2d' : 'auto'));
       if (targetDim === 'auto') {
-        const has3D = rawList.some(f => {
-          const str = typeof f === 'object' && f !== null ? (f.latex || f.expr || '') : String(f);
-          return is3DFormula(str);
-        });
+        const has3D = rawList.some(f => is3DFormula(f));
         targetDim = has3D ? '3d' : '2d';
       }
 
@@ -1856,7 +1933,9 @@
       }
 
       this.updateStatus(`已绘制 ${this.expressions.length} 条公式`);
-      showToast('📈 Desmos 绘图', `已渲染 ${formatted.length} 条公式 (${targetDim === '3d' ? '3D 空间' : '2D 平面'})`);
+      if (options.showToast) {
+        showToast('📈 Desmos 绘图', `已渲染 ${formatted.length} 条公式 (${targetDim === '3d' ? '3D 空间' : '2D 平面'})`);
+      }
       return { success: true, dimension: targetDim, expressions: this.expressions };
     },
 
@@ -1871,61 +1950,101 @@
     exportImage(options = {}) {
       if (!this.calc) {
         showToast('导出失败', '计算器实例未就绪', true);
-        return;
+        return Promise.reject(new Error('计算器实例未就绪'));
       }
 
       const width = options.width || 1600;
       const height = options.height || 1000;
       const targetPixelRatio = options.targetPixelRatio || 2;
-      const filename = `desmos_plot_${Date.now()}.png`;
+      const filename = options.filename || `desmos_plot_${Date.now()}.png`;
 
-      const download = (dataUri) => {
-        if (!dataUri) {
-          showToast('导出失败', '获取图片数据失败', true);
-          return;
-        }
-        const a = document.createElement('a');
-        a.download = filename;
-        a.href = dataUri;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        showToast('💾 图像导出成功', filename);
-      };
+      return new Promise((resolve, reject) => {
+        const handleUri = (dataUri) => {
+          if (!dataUri) {
+            showToast('导出失败', '获取图片数据失败', true);
+            return reject(new Error('获取图片数据失败'));
+          }
+          if (options.download !== false) {
+            const a = document.createElement('a');
+            a.download = filename;
+            a.href = dataUri;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            showToast('💾 图像导出成功', filename);
+          }
+          if (typeof options.callback === 'function') {
+            try { options.callback(dataUri); } catch {}
+          }
+          resolve(dataUri);
+        };
 
-      try {
-        if (this.dimension === '3d') {
-          // 3D 走同步 screenshot
-          if (typeof this.calc.screenshot === 'function') {
-            const res = this.calc.screenshot({ width, height, targetPixelRatio });
-            if (typeof res === 'string') {
-              download(res);
-            } else if (res && typeof res.then === 'function') {
-              res.then(download);
+        try {
+          if (this.dimension === '3d') {
+            // 3D 走同步 screenshot (Desmos 官方 Calculator3D 规范)
+            if (typeof this.calc.screenshot === 'function') {
+              const res = this.calc.screenshot({ width, height, targetPixelRatio });
+              if (typeof res === 'string') {
+                handleUri(res);
+              } else if (res && typeof res.then === 'function') {
+                res.then(handleUri).catch(reject);
+              } else if (typeof this.calc.asyncScreenshot === 'function') {
+                this.calc.asyncScreenshot({ width, height, targetPixelRatio }, handleUri);
+              } else {
+                reject(new Error('3D 截图接口不可用'));
+              }
             } else if (typeof this.calc.asyncScreenshot === 'function') {
-              this.calc.asyncScreenshot({ width, height, targetPixelRatio }, download);
+              this.calc.asyncScreenshot({ width, height, targetPixelRatio }, handleUri);
+            } else {
+              reject(new Error('未找到 3D 截图方法'));
             }
-          } else if (typeof this.calc.asyncScreenshot === 'function') {
-            this.calc.asyncScreenshot({ width, height, targetPixelRatio }, download);
+          } else {
+            // 2D 优先走 asyncScreenshot (按官方 GraphingCalculator 规范)，挂载 120ms 同步兜底
+            let settled = false;
+            const onData = (dataUri) => {
+              if (settled) return;
+              settled = true;
+              handleUri(dataUri);
+            };
+
+            if (typeof this.calc.asyncScreenshot === 'function') {
+              try {
+                this.calc.asyncScreenshot({ width, height, targetPixelRatio }, (data) => {
+                  if (data) onData(data);
+                });
+              } catch {}
+            }
+
+            setTimeout(() => {
+              if (!settled) {
+                if (typeof this.calc.screenshot === 'function') {
+                  try {
+                    const res = this.calc.screenshot({ width, height, targetPixelRatio });
+                    if (res) onData(res);
+                  } catch (e) {
+                    reject(e);
+                  }
+                } else {
+                  reject(new Error('2D 截图接口不可用'));
+                }
+              }
+            }, 120);
           }
-        } else {
-          // 2D 走 asyncScreenshot
-          if (typeof this.calc.asyncScreenshot === 'function') {
-            this.calc.asyncScreenshot({ width, height, targetPixelRatio }, download);
-          } else if (typeof this.calc.screenshot === 'function') {
-            const res = this.calc.screenshot({ width, height, targetPixelRatio });
-            if (typeof res === 'string') download(res);
-          }
+        } catch (err) {
+          showToast('导出异常', err.message, true);
+          reject(err);
         }
-      } catch (err) {
-        showToast('导出异常', err.message, true);
-      }
+      });
     },
 
     handlePlotPayload(payload) {
       if (!payload) return;
       if (payload.action === 'clear') {
         this.clear();
+        return;
+      }
+      if (payload.action === 'setDimension' || (payload.dimension && (!payload.expressions || payload.expressions.length === 0))) {
+        this.setDimension(payload.dimension);
         return;
       }
       this.plot(payload.expressions || [], {

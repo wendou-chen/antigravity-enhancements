@@ -106,6 +106,11 @@ async function runSmokeTest() {
     ws.on('error', reject);
   });
 
+  // 确保测试前执行最新代码注入
+  const { getClientInjectionScript } = require(path.join(ROOT, 'src', 'cdp', 'client-assets.js'));
+  await evalInPage(getClientInjectionScript());
+  await new Promise(r => setTimeout(r, 200));
+
   const domState = await evalInPage(`({
     hasStyle: Boolean(document.getElementById('anti-enhancements-style')),
     styleVersion: document.getElementById('anti-enhancements-style')?.getAttribute('data-version'),
@@ -445,11 +450,15 @@ async function runSmokeTest() {
     const ad = window.__ANTI_DESMOS__;
     if (!ad) return { error: 'NO_ANTI_DESMOS' };
 
-    // 1. 打开抽屉
+    // 1. 打开抽屉并验证 FAB 悬浮球避让 (不遮挡 480px 抽屉)
     ad.openDrawer();
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 350));
     const drawer = document.querySelector('.anti-desmos-drawer');
     const isDrawerOpen = Boolean(drawer && drawer.classList.contains('open'));
+
+    const fab = document.querySelector('.anti-fab-container');
+    const fabRect = fab ? fab.getBoundingClientRect() : null;
+    const isFabDodged = Boolean(fabRect && (window.innerWidth - fabRect.right) >= 480);
 
     // 2. 绘制 2D 平面公式测试
     await ad.plot(['y=\\\\sin(x)', 'y=\\\\cos(x)'], { dimension: '2d' });
@@ -457,24 +466,45 @@ async function runSmokeTest() {
     const exprCount2D = ad.expressions.length;
     const dim2D = ad.dimension;
 
-    // 3. 绘制 3D 空间立体曲面测试 (自动切换为 3D)
+    // 3. 测试 2D 图像导出接口 (返回有效 data:image/png 数据)
+    let export2dOk = false;
+    try {
+      const uri2d = await ad.exportImage({ download: false });
+      export2dOk = Boolean(typeof uri2d === 'string' && uri2d.startsWith('data:image/png'));
+    } catch (e) {
+      export2dOk = false;
+    }
+
+    // 4. 绘制 3D 空间立体曲面测试 (自动切换为 3D)
     await ad.plot(['z=x^2-y^2'], { dimension: '3d' });
     await new Promise(r => setTimeout(r, 250));
     const exprCount3D = ad.expressions.length;
     const dim3D = ad.dimension;
 
+    // 5. 测试 3D 图像导出接口 (Desmos Calculator3D 同步/异步 screenshot)
+    let export3dOk = false;
+    try {
+      const uri3d = await ad.exportImage({ download: false });
+      export3dOk = Boolean(typeof uri3d === 'string' && uri3d.startsWith('data:image/png'));
+    } catch (e) {
+      export3dOk = false;
+    }
+
     return {
       hasAd: true,
       isDrawerOpen,
+      isFabDodged,
       dim2D,
       exprCount2D,
+      export2dOk,
       dim3D,
-      exprCount3D
+      exprCount3D,
+      export3dOk
     };
   })()`);
 
-  if (desmosCheck && desmosCheck.hasAd && desmosCheck.isDrawerOpen && desmosCheck.dim2D === '2d' && desmosCheck.dim3D === '3d') {
-    logPass(`window.__ANTI_DESMOS__ 控制器就绪: 抽屉展开成功 (.open), 2D/3D 双维度引擎平滑切换成功`);
+  if (desmosCheck && desmosCheck.hasAd && desmosCheck.isDrawerOpen && desmosCheck.dim2D === '2d' && desmosCheck.dim3D === '3d' && desmosCheck.export2dOk && desmosCheck.export3dOk) {
+    logPass(`window.__ANTI_DESMOS__ 控制器就绪: 抽屉展开成功 (.open), 2D/3D 双维度平滑切换成功, 2D/3D 高清截图导出全部就绪`);
   } else {
     logFail(`Desmos 画板控制器验证异常: ${JSON.stringify(desmosCheck)}`);
   }

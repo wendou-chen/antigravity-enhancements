@@ -310,19 +310,8 @@ class CDPInjector {
     });
   }
 
-  async evaluateInActiveTarget(expr) {
-    const port = this.activePort || (await this.findActivePort());
-    if (!port) return null;
-
-    const targets = await this.getTargets(port);
-    if (!Array.isArray(targets) || targets.length === 0) return null;
-
-    const target = targets.find(t => (t.type === 'page' || t.type === 'webview') && t.title && t.title.includes('Antigravity'))
-      || targets.find(t => t.type === 'page' || t.type === 'webview')
-      || targets[0];
-    if (!target || !target.webSocketDebuggerUrl) return null;
-
-    if (!WebSocketClient) return null;
+  evaluateInTarget(target, expr) {
+    if (!WebSocketClient || !target || !target.webSocketDebuggerUrl) return Promise.resolve(null);
 
     return new Promise((resolve) => {
       let ws = null;
@@ -330,6 +319,7 @@ class CDPInjector {
       const done = (val) => {
         if (!settled) {
           settled = true;
+          if (timeout) clearTimeout(timeout);
           if (ws) {
             try { ws.close(); } catch {}
           }
@@ -352,7 +342,6 @@ class CDPInjector {
         ws.on('message', (data) => {
           try {
             const res = JSON.parse(data.toString());
-            clearTimeout(timeout);
             done(res.result?.result?.value);
           } catch {
             done(null);
@@ -364,6 +353,32 @@ class CDPInjector {
         done(null);
       }
     });
+  }
+
+  async evaluateInActiveTarget(expr) {
+    const port = this.activePort || (await this.findActivePort());
+    if (!port) return null;
+
+    const targets = await this.getTargets(port);
+    if (!Array.isArray(targets) || targets.length === 0) return null;
+
+    const pageTargets = targets.filter(t => (t.type === 'page' || t.type === 'webview') && t.webSocketDebuggerUrl);
+    if (pageTargets.length === 0) return null;
+
+    // 优先匹配包含 Antigravity 的主窗口
+    pageTargets.sort((a, b) => {
+      const aMatch = (a.title && a.title.includes('Antigravity')) ? 1 : 0;
+      const bMatch = (b.title && b.title.includes('Antigravity')) ? 1 : 0;
+      return bMatch - aMatch;
+    });
+
+    for (const target of pageTargets) {
+      const res = await this.evaluateInTarget(target, expr);
+      if (res !== null && res !== false) {
+        return res;
+      }
+    }
+    return false;
   }
 
   async forceReinject() {
