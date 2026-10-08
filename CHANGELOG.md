@@ -10,11 +10,14 @@
 - **根容器满宽与横向偏移绝对归零守卫**：
   - 在 `html, body` 样式规则中强行固化 `width: 100% !important; margin-left: 0 !important; margin-right: 0 !important;`，彻底杜绝根元素被 auto margin 居中留白；
   - 在 client.js 初始化与 `applyChatWidth` 调用时显式复位 `document.body.scrollLeft = 0; document.documentElement.scrollLeft = 0;`，确保视口无偏移。
-- **自动化冒烟门禁 10 引入真实 DOMRect 物理几何尺寸断言**：
-  - 严密断言 `document.documentElement.getBoundingClientRect().x === 0`；
-  - 严密断言 `document.documentElement.offsetWidth` 与 `window.innerWidth` 满宽对齐（差值 <= 1px）；
-  - 严密断言 `document.body.scrollLeft === 0` 且消息流依然维持用户设置的 `max-width` 约束；
+- **自动化冒烟门禁 10 引入真实 DOMRect 物理几何尺寸断言与 CDP 实机截图存证**：
+  - 严密断言 `document.documentElement.getBoundingClientRect().x === 0`，根视口绝对零偏置；
+  - 严密断言 `document.documentElement.offsetWidth` 与 `window.innerWidth` 满宽对齐（差值 <= 1px），杜绝全屏大留白；
+  - 严密断言 `document.body.scrollLeft === 0`，确保输入框聚焦时视口无滚偏；
+  - **双重受控容器严格同时约束**：同时严密验证消息流容器（`.md-table-bleed > .mx-auto.w-full`）与输入框容器（`.w-full.animate-fade-in:has([contenteditable="true"])`）的 computed `maxWidth` 均等于用户所设宽度，消灭分支短路漏测；
+  - **CDP 原生真机截图存证**：自动化门禁通过 DevTools 协议原生下发 `Page.captureScreenshot`，生成真实可视渲染的 PNG 截图存盘至 `tests/artifacts/smoke_layout_verified.png`，实现物理视觉证据闭环；
   - 10 级物理门禁 100% 全部通过。
+
 
 ---
 
