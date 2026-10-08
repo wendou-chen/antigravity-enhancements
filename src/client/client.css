@@ -1,4 +1,4 @@
-/* Antigravity Web Enhancements Client Styles (v2.8.0) */
+/* Antigravity Web Enhancements Client Styles (v2.8.1) */
 
 /* =============================================================
    0. 主题变量系统 (反重力羊皮纸暖色 / 纯白明亮 / 沉浸暗黑 三大主题自由切换)
@@ -197,6 +197,9 @@
 }
 
 html, body {
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
   overflow-x: hidden !important;
   max-width: 100vw !important;
   box-sizing: border-box !important;
@@ -208,7 +211,6 @@ html, body {
 
 /* 精准消息流、输入框与代码产物宽度约束 (居中聚焦与自由调宽) */
 .md-table-bleed > .mx-auto.w-full,
-[style*="max-conversation-width"],
 .w-full.animate-fade-in:has([contenteditable="true"]) {
   max-width: var(--anti-chat-max-width) !important;
   width: 100% !important;
@@ -219,7 +221,6 @@ html, body {
 
 /* 拖拽滑动条期间局部过渡隔离，仅针对目标元素关闭 transition，杜绝掉帧与撕裂 */
 html.anti-width-resizing .md-table-bleed > .mx-auto.w-full,
-html.anti-width-resizing [style*="max-conversation-width"],
 html.anti-width-resizing .w-full.animate-fade-in:has([contenteditable="true"]) {
   transition: none !important;
 }

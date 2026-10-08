@@ -1,5 +1,23 @@
 # Antigravity Enhancements 更新与逆向日志 (CHANGELOG)
 
+## [v2.8.1] - 2026-10-08
+
+### 🚨 紧急热修复 (根除误伤根容器导致侧边栏截断与窗口错位，恢复满宽几何对齐)
+- **根因排查与有害选择器剔除**：
+  - 排查发现 `applyChatWidth` 在 `document.documentElement` 上动态写入了 `--max-conversation-width` 行内变量，导致 `client.css` 中宽泛的 `[style*="max-conversation-width"]` 属性选择器直接误中了宿主根标签 `<html>` 与高层容器；
+  - 进而导致整个应用窗口被强制赋予 `max-width: 896px !important; margin: 0 auto !important;`，左侧边栏与右侧功能区被直接挤出可视区或截断遮挡；
+  - 彻底剔除普通规则与 `html.anti-width-resizing` 规则中的 `[style*="max-conversation-width"]` 选择器，精准收敛为 `.md-table-bleed > .mx-auto.w-full` 与 `.w-full.animate-fade-in:has([contenteditable="true"])`。
+- **根容器满宽与横向偏移绝对归零守卫**：
+  - 在 `html, body` 样式规则中强行固化 `width: 100% !important; margin-left: 0 !important; margin-right: 0 !important;`，彻底杜绝根元素被 auto margin 居中留白；
+  - 在 client.js 初始化与 `applyChatWidth` 调用时显式复位 `document.body.scrollLeft = 0; document.documentElement.scrollLeft = 0;`，确保视口无偏移。
+- **自动化冒烟门禁 10 引入真实 DOMRect 物理几何尺寸断言**：
+  - 严密断言 `document.documentElement.getBoundingClientRect().x === 0`；
+  - 严密断言 `document.documentElement.offsetWidth` 与 `window.innerWidth` 满宽对齐（差值 <= 1px）；
+  - 严密断言 `document.body.scrollLeft === 0` 且消息流依然维持用户设置的 `max-width` 约束；
+  - 10 级物理门禁 100% 全部通过。
+
+---
+
 ## [v2.8.0] - 2026-10-08
 
 ### 🌟 核心突破 (对话区无级平滑滑动条调节与新版布局错位击穿修复)

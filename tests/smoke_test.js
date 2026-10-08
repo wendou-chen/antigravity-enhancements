@@ -113,7 +113,7 @@ async function runSmokeTest() {
     hasGlobalConfig: Boolean(window.__TRANCY_GLOBAL_CONFIG__)
   })`);
 
-  if (domState.hasStyle && domState.styleVersion === '2.8.0') {
+  if (domState.hasStyle && domState.styleVersion === '2.8.1') {
     logPass(`样式表注入就绪，版本对齐: v${domState.styleVersion}`);
   } else {
     logFail(`样式表状态异常: ${JSON.stringify(domState)}`);
@@ -268,8 +268,8 @@ async function runSmokeTest() {
     logFail(`ThemeManager 验证异常: ${JSON.stringify(themeCheck)}`);
   }
 
-  // 门禁 10：对话区无级宽度调节与变量同步验证 (WidthManager)
-  console.log('\n[门禁 10: 对话区无级平滑宽度调节与 CSS 变量同步验证]');
+  // 门禁 10：对话区无级宽度调节与视口物理几何对齐验证 (WidthManager)
+  console.log('\n[门禁 10: 对话区无级平滑宽度调节与视口物理几何对齐验证]');
   const widthCheck = await evalInPage(`(() => {
     const wm = window.__ANTI_WIDTH_MANAGER__;
     if (!wm) return { error: 'NO_WIDTH_MANAGER' };
@@ -303,6 +303,36 @@ async function runSmokeTest() {
     wm.apply(initialMode || initialWidth || 'standard');
     const isRestored = Boolean(document.documentElement.style.getPropertyValue('--anti-chat-max-width'));
 
+    // 5. 真实 DOMRect 物理几何尺寸与满宽断言 (防侧边栏遮挡、窗口位移或居中错位)
+    const docRect = document.documentElement.getBoundingClientRect();
+    const docRectXPass = Math.abs(docRect.x) <= 0.5;
+    const fullWidthPass = Math.abs(document.documentElement.offsetWidth - window.innerWidth) <= 1;
+    const scrollLeftPass = (document.body.scrollLeft === 0) && (document.documentElement.scrollLeft === 0);
+
+    // 6. 对话流依然保持设置的 max-width 约束
+    const currentVarWidth = document.documentElement.style.getPropertyValue('--anti-chat-max-width') || '896px';
+    const bleedElem = document.querySelector('.md-table-bleed > .mx-auto.w-full');
+    const inputElem = document.querySelector('.w-full.animate-fade-in:has([contenteditable="true"])');
+    let chatMaxWidthPass = false;
+    let actualChatMaxWidth = '';
+    if (bleedElem) {
+      actualChatMaxWidth = window.getComputedStyle(bleedElem).maxWidth;
+      chatMaxWidthPass = actualChatMaxWidth === currentVarWidth;
+    } else if (inputElem) {
+      actualChatMaxWidth = window.getComputedStyle(inputElem).maxWidth;
+      chatMaxWidthPass = actualChatMaxWidth === currentVarWidth;
+    } else {
+      const probe = document.createElement('div');
+      probe.className = 'md-table-bleed';
+      const inner = document.createElement('div');
+      inner.className = 'mx-auto w-full';
+      probe.appendChild(inner);
+      document.body.appendChild(probe);
+      actualChatMaxWidth = window.getComputedStyle(inner).maxWidth;
+      chatMaxWidthPass = actualChatMaxWidth === currentVarWidth;
+      probe.remove();
+    }
+
     return {
       hasWm: true,
       isCustomApplied,
@@ -310,14 +340,24 @@ async function runSmokeTest() {
       isFullApplied,
       hasResizingClass,
       removedResizingClass,
-      isRestored
+      isRestored,
+      docRectX: docRect.x,
+      docRectXPass,
+      docOffsetWidth: document.documentElement.offsetWidth,
+      winInnerWidth: window.innerWidth,
+      fullWidthPass,
+      scrollLeftPass,
+      chatMaxWidthPass,
+      actualChatMaxWidth,
+      currentVarWidth
     };
   })()`);
 
-  if (widthCheck && widthCheck.hasWm && widthCheck.isCustomApplied && widthCheck.isCompactApplied && widthCheck.isFullApplied && widthCheck.hasResizingClass && widthCheck.removedResizingClass && widthCheck.isRestored) {
-    logPass('WidthManager 无级平滑宽度调节就绪: [1280px 自定义] / [紧凑 760px] / [全宽 100%] 变量下发与隔离类验证 100% 成功');
+  if (widthCheck && widthCheck.hasWm && widthCheck.isCustomApplied && widthCheck.isCompactApplied && widthCheck.isFullApplied && widthCheck.hasResizingClass && widthCheck.removedResizingClass && widthCheck.isRestored && widthCheck.docRectXPass && widthCheck.fullWidthPass && widthCheck.scrollLeftPass && widthCheck.chatMaxWidthPass) {
+    logPass(`WidthManager 无级平滑宽度调节就绪: [1280px 自定义] / [紧凑 760px] / [全宽 100%] 变量下发正常`);
+    logPass(`物理几何尺寸与满宽对齐: 视口坐标 x=${widthCheck.docRectX} (Pass), 满宽对齐 ${widthCheck.docOffsetWidth}px/${widthCheck.winInnerWidth}px (Pass), scrollLeft=0 (Pass), 对话流约束 (${widthCheck.actualChatMaxWidth}) 生效 (Pass)`);
   } else {
-    logFail(`WidthManager 验证异常: ${JSON.stringify(widthCheck)}`);
+    logFail(`WidthManager 或物理几何验证异常: ${JSON.stringify(widthCheck)}`);
   }
 
   ws.close();

@@ -15,14 +15,16 @@ function getClientInjectionScript() {
     if (document.documentElement) {
       document.documentElement.style.overflowX = 'hidden';
       document.documentElement.style.maxWidth = '100vw';
+      document.documentElement.scrollLeft = 0;
     }
     if (document.body) {
       document.body.style.overflowX = 'hidden';
       document.body.style.maxWidth = '100vw';
+      document.body.scrollLeft = 0;
     }
 
     // 1. Inject or Update Styles
-    var CURRENT_VERSION = '2.8.0';
+    var CURRENT_VERSION = '2.8.1';
     var existingStyle = document.getElementById('anti-enhancements-style');
     if (!existingStyle) {
       var style = document.createElement('style');

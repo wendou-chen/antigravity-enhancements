@@ -1,5 +1,5 @@
 /**
- * Antigravity Web Enhancements Client Payload (v2.8.0 VIP)
+ * Antigravity Web Enhancements Client Payload (v2.8.1 VIP)
  * Injected into Antigravity Workspace DOM via Chrome DevTools Protocol
  * Features: LaTeX Copy, Mermaid Render, Trancy Selection Translation, Vocabulary Favorites, Smooth Width Slider
  */
@@ -59,20 +59,22 @@
     if (document.documentElement) document.documentElement.classList.remove('anti-width-resizing');
   };
 
-  // 0. 锁定视口溢出
+  // 0. 锁定视口溢出并彻底复位横向偏移
   try {
     if (document.documentElement) {
       document.documentElement.style.overflowX = 'hidden';
       document.documentElement.style.maxWidth = '100vw';
+      document.documentElement.scrollLeft = 0;
     }
     if (document.body) {
       document.body.style.overflowX = 'hidden';
       document.body.style.maxWidth = '100vw';
+      document.body.scrollLeft = 0;
     }
   } catch {}
 
   // -------------------------------------------------------------
-  // Width Modes & Manager (v2.8.0)
+  // Width Modes & Manager (v2.8.1)
   // -------------------------------------------------------------
   const WIDTH_MODES = {
     compact: { key: 'compact', label: '紧凑 760px', width: '760px', num: 760 },
@@ -144,6 +146,12 @@
     state.widthMode = parsed.key;
     state.chatWidth = parsed.cssVal;
     safeStorage.setItem('anti_enhance_chat_width', parsed.key === 'custom' ? parsed.cssVal : parsed.key);
+
+    // 彻底复位可能存在的横向偏移
+    try {
+      if (document.documentElement) document.documentElement.scrollLeft = 0;
+      if (document.body) document.body.scrollLeft = 0;
+    } catch {}
 
     // 同步分发 CSS 变量 (穿透宿主行内 max(30vw, ...) 钳位)
     document.documentElement.style.setProperty('--anti-chat-max-width', parsed.cssVal);
@@ -1541,7 +1549,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.8.0 VIP</span>
+          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.8.1 VIP</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="plan-mode" title="按 Shift+Tab 或 Alt+P 快速切换">
