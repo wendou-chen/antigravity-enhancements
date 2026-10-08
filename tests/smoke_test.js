@@ -28,6 +28,8 @@ async function runSmokeTest() {
     'src/client/client.css',
     'src/cdp/injector.js',
     'src/cdp/client-assets.js',
+    'src/cdp/desmos-server.js',
+    'src/assets/desmos_api.js',
     'package.json'
   ];
   for (const rel of reqFiles) {
@@ -110,10 +112,11 @@ async function runSmokeTest() {
     hasFab: Boolean(document.querySelector('.anti-fab-container')),
     hasEngine: Boolean(window.__TRANCY_ENGINE__),
     hasCloud: Boolean(window.__TRANCY_CLOUD__),
-    hasGlobalConfig: Boolean(window.__TRANCY_GLOBAL_CONFIG__)
+    hasGlobalConfig: Boolean(window.__TRANCY_GLOBAL_CONFIG__),
+    hasDesmos: Boolean(window.__ANTI_DESMOS__)
   })`);
 
-  if (domState.hasStyle && domState.styleVersion === '2.8.1') {
+  if (domState.hasStyle && domState.styleVersion === '2.9.0') {
     logPass(`样式表注入就绪，版本对齐: v${domState.styleVersion}`);
   } else {
     logFail(`样式表状态异常: ${JSON.stringify(domState)}`);
@@ -129,6 +132,12 @@ async function runSmokeTest() {
     logPass('TrancyEngine 与 TrancyCloud 运行时注入正常 (双引擎协同就绪)');
   } else {
     logFail('TrancyEngine 或 TrancyCloud 未注入');
+  }
+
+  if (domState.hasDesmos) {
+    logPass('Desmos 数学画板全局控制器注入正常 (window.__ANTI_DESMOS__)');
+  } else {
+    logFail('window.__ANTI_DESMOS__ 控制器未注入');
   }
 
   // 门禁 4：Trancy 官方基础词典 API 评测
@@ -394,6 +403,133 @@ async function runSmokeTest() {
   } catch (err) {
     logInfo(`截图生成跳过: ${err.message}`);
   }
+
+  // 门禁 11：Desmos 2D/3D 数学画板与双轨通信验收
+  console.log('\n[门禁 11: Desmos 2D/3D 数学画板抽屉与多端通信验收]');
+  // 11.1 探测 Desmos 服务端口 8325 静态资源与状态接口
+  const desmosServerProbe = await new Promise((resolve) => {
+    http.get({ hostname: '127.0.0.1', port: 8325, path: '/api/state', timeout: 2000 }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        try { resolve({ ok: res.statusCode === 200, json: JSON.parse(data) }); }
+        catch { resolve({ ok: false }); }
+      });
+    }).on('error', (err) => resolve({ ok: false, error: err.message }));
+  });
+
+  if (desmosServerProbe.ok && desmosServerProbe.json) {
+    logPass(`Desmos 服务 (:8325) 通信正常 (version: ${desmosServerProbe.json.version || '2.9.0'})`);
+  } else {
+    logFail(`Desmos 服务 (:8325) 未响应: ${desmosServerProbe.error || '状态码非 200'}`);
+  }
+
+  // 11.2 探测静态资产 /assets/desmos_api.js
+  const assetProbe = await new Promise((resolve) => {
+    const req = http.get({ hostname: '127.0.0.1', port: 8325, path: '/assets/desmos_api.js', timeout: 3000 }, (res) => {
+      let len = 0;
+      res.on('data', c => len += c.length);
+      res.on('end', () => resolve({ ok: res.statusCode === 200, length: len }));
+    });
+    req.on('error', () => resolve({ ok: false, length: 0 }));
+  });
+
+  if (assetProbe.ok && assetProbe.length > 100000) {
+    logPass(`Desmos 离线脚本托管正常 (:8325/assets/desmos_api.js, 大小: ${assetProbe.length} 字节)`);
+  } else {
+    logFail(`Desmos 离线脚本托管异常: ok=${assetProbe.ok}, len=${assetProbe.length}`);
+  }
+
+  // 11.3 测试页面内 window.__ANTI_DESMOS__ 控制器与抽屉挂载
+  const desmosCheck = await evalInPage(`(async () => {
+    const ad = window.__ANTI_DESMOS__;
+    if (!ad) return { error: 'NO_ANTI_DESMOS' };
+
+    // 1. 打开抽屉
+    ad.openDrawer();
+    await new Promise(r => setTimeout(r, 200));
+    const drawer = document.querySelector('.anti-desmos-drawer');
+    const isDrawerOpen = Boolean(drawer && drawer.classList.contains('open'));
+
+    // 2. 绘制 2D 平面公式测试
+    await ad.plot(['y=\\\\sin(x)', 'y=\\\\cos(x)'], { dimension: '2d' });
+    await new Promise(r => setTimeout(r, 200));
+    const exprCount2D = ad.expressions.length;
+    const dim2D = ad.dimension;
+
+    // 3. 绘制 3D 空间立体曲面测试 (自动切换为 3D)
+    await ad.plot(['z=x^2-y^2'], { dimension: '3d' });
+    await new Promise(r => setTimeout(r, 250));
+    const exprCount3D = ad.expressions.length;
+    const dim3D = ad.dimension;
+
+    return {
+      hasAd: true,
+      isDrawerOpen,
+      dim2D,
+      exprCount2D,
+      dim3D,
+      exprCount3D
+    };
+  })()`);
+
+  if (desmosCheck && desmosCheck.hasAd && desmosCheck.isDrawerOpen && desmosCheck.dim2D === '2d' && desmosCheck.dim3D === '3d') {
+    logPass(`window.__ANTI_DESMOS__ 控制器就绪: 抽屉展开成功 (.open), 2D/3D 双维度引擎平滑切换成功`);
+  } else {
+    logFail(`Desmos 画板控制器验证异常: ${JSON.stringify(desmosCheck)}`);
+  }
+
+  // 11.4 测试通过 desmos-cli 的 sendToDsh 多端直推到 Antigravity (:8325)
+  try {
+    const desmosCliPath = path.resolve('e:/Coding_tools/desmos-cli/src/dsh-client.js');
+    const { sendToDsh } = require(desmosCliPath);
+    const cliRes = await sendToDsh(['z=x^2+y^2'], { dimension: '3d' });
+    if (cliRes && cliRes.success && cliRes.targets.includes('antigravity')) {
+      logPass(`desmos-cli 多端直推联动成功: 已推送到 [${cliRes.targets.join(', ')}]，3D 曲面已上屏`);
+    } else {
+      logFail(`desmos-cli 直推失败: ${JSON.stringify(cliRes)}`);
+    }
+  } catch (cliErr) {
+    logFail(`desmos-cli 推送调用异常: ${cliErr.message}`);
+  }
+
+  // 11.5 生成实机渲染存证截图 smoke_desmos_rendered.png
+  try {
+    await new Promise(r => setTimeout(r, 400));
+    const shotData = await new Promise((resolve) => {
+      const id = Math.floor(Math.random() * 100000);
+      const handler = (raw) => {
+        try {
+          const msg = JSON.parse(raw.toString());
+          if (msg.id === id) {
+            ws.off('message', handler);
+            resolve(msg.result?.data);
+          }
+        } catch {
+          ws.off('message', handler);
+          resolve(null);
+        }
+      };
+      ws.on('message', handler);
+      ws.send(JSON.stringify({ id, method: 'Page.captureScreenshot', params: { format: 'png' } }));
+    });
+    if (shotData) {
+      const artDir = path.join(ROOT, 'tests', 'artifacts');
+      if (!fs.existsSync(artDir)) fs.mkdirSync(artDir, { recursive: true });
+      const desmosShotPath = path.join(artDir, 'smoke_desmos_rendered.png');
+      fs.writeFileSync(desmosShotPath, Buffer.from(shotData, 'base64'));
+      logPass(`实机 Desmos 渲染截图成功生成并存盘: tests/artifacts/smoke_desmos_rendered.png`);
+    }
+  } catch (err) {
+    logInfo(`Desmos 截图生成跳过: ${err.message}`);
+  }
+
+  // 11.6 复位关闭抽屉以保持页面洁净
+  await evalInPage(`(() => {
+    if (window.__ANTI_DESMOS__) {
+      window.__ANTI_DESMOS__.closeDrawer();
+    }
+  })()`);
 
   ws.close();
 

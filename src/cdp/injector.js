@@ -256,7 +256,7 @@ class CDPInjector {
         done(false);
       }, 4000);
 
-      const checkScript = `Boolean(document.getElementById('anti-enhancements-style') && document.getElementById('anti-enhancements-style').getAttribute('data-version') === '2.8.1' && document.querySelector('.anti-fab-container'))`;
+      const checkScript = `Boolean(document.getElementById('anti-enhancements-style') && document.getElementById('anti-enhancements-style').getAttribute('data-version') === '2.9.0' && document.querySelector('.anti-fab-container'))`;
 
       ws.on('open', () => {
         try {
@@ -307,6 +307,62 @@ class CDPInjector {
       ws.on('close', () => {
         done(false);
       });
+    });
+  }
+
+  async evaluateInActiveTarget(expr) {
+    const port = this.activePort || (await this.findActivePort());
+    if (!port) return null;
+
+    const targets = await this.getTargets(port);
+    if (!Array.isArray(targets) || targets.length === 0) return null;
+
+    const target = targets.find(t => (t.type === 'page' || t.type === 'webview') && t.title && t.title.includes('Antigravity'))
+      || targets.find(t => t.type === 'page' || t.type === 'webview')
+      || targets[0];
+    if (!target || !target.webSocketDebuggerUrl) return null;
+
+    if (!WebSocketClient) return null;
+
+    return new Promise((resolve) => {
+      let ws = null;
+      let settled = false;
+      const done = (val) => {
+        if (!settled) {
+          settled = true;
+          if (ws) {
+            try { ws.close(); } catch {}
+          }
+          resolve(val);
+        }
+      };
+
+      const timeout = setTimeout(() => done(null), 3000);
+
+      try {
+        ws = new WebSocketClient(target.webSocketDebuggerUrl);
+        ws.on('open', () => {
+          const id = Math.floor(Math.random() * 100000);
+          ws.send(JSON.stringify({
+            id,
+            method: 'Runtime.evaluate',
+            params: { expression: expr, awaitPromise: true, returnByValue: true }
+          }));
+        });
+        ws.on('message', (data) => {
+          try {
+            const res = JSON.parse(data.toString());
+            clearTimeout(timeout);
+            done(res.result?.result?.value);
+          } catch {
+            done(null);
+          }
+        });
+        ws.on('error', () => done(null));
+        ws.on('close', () => done(null));
+      } catch {
+        done(null);
+      }
     });
   }
 

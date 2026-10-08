@@ -1,7 +1,7 @@
 /**
- * Antigravity Web Enhancements Client Payload (v2.8.1 VIP)
+ * Antigravity Web Enhancements Client Payload (v2.9.0 VIP)
  * Injected into Antigravity Workspace DOM via Chrome DevTools Protocol
- * Features: LaTeX Copy, Mermaid Render, Trancy Selection Translation, Vocabulary Favorites, Smooth Width Slider
+ * Features: LaTeX Copy, Mermaid Render, Trancy Selection Translation, Vocabulary Favorites, Smooth Width Slider, Desmos Math Grapher
  */
 (function () {
   // 安全存储封装（兼容 data: URL 等禁用 localStorage 的沙箱环境）
@@ -44,18 +44,19 @@
 
   // 清理旧版本挂载的 DOM
   try {
-    document.querySelectorAll('.anti-fab-container, .anti-quote-toolbar, .trancy-card-container, .trancy-bubble-trigger, .trancy-voice-overlay, .anti-input-mic-btn').forEach(el => el.remove());
+    document.querySelectorAll('.anti-fab-container, .anti-quote-toolbar, .trancy-card-container, .trancy-bubble-trigger, .trancy-voice-overlay, .anti-input-mic-btn, .anti-desmos-drawer').forEach(el => el.remove());
   } catch(e) {}
 
   if (window.__ANTI_ENHANCEMENTS_CLEANUP__) {
     try { window.__ANTI_ENHANCEMENTS_CLEANUP__(); } catch (e) {}
   }
   window.__ANTI_ENHANCEMENTS_LOADED__ = true;
+  window.__ANTI_VERSION__ = '2.9.0';
 
   const cleanups = [];
   window.__ANTI_ENHANCEMENTS_CLEANUP__ = function() {
     cleanups.forEach(fn => { try { fn(); } catch(e){} });
-    document.querySelectorAll('.anti-fab-container, .anti-quote-toolbar, .trancy-card-container, .trancy-voice-overlay, .anti-input-mic-btn').forEach(el => el.remove());
+    document.querySelectorAll('.anti-fab-container, .anti-quote-toolbar, .trancy-card-container, .trancy-voice-overlay, .anti-input-mic-btn, .anti-desmos-drawer').forEach(el => el.remove());
     if (document.documentElement) document.documentElement.classList.remove('anti-width-resizing');
   };
 
@@ -74,7 +75,7 @@
   } catch {}
 
   // -------------------------------------------------------------
-  // Width Modes & Manager (v2.8.1)
+  // Width Modes & Manager (v2.9.0)
   // -------------------------------------------------------------
   const WIDTH_MODES = {
     compact: { key: 'compact', label: '紧凑 760px', width: '760px', num: 760 },
@@ -293,6 +294,11 @@
       const card = document.querySelector('.trancy-card-container');
       if (card) {
         card.setAttribute('data-anti-theme', resolved);
+      }
+
+      // 同步 Desmos 数学画板主题
+      if (window.__ANTI_DESMOS__ && typeof window.__ANTI_DESMOS__.updateTheme === 'function') {
+        window.__ANTI_DESMOS__.updateTheme(resolved === 'dark');
       }
     },
 
@@ -1246,8 +1252,12 @@
         e.preventDefault();
         e.stopPropagation();
         navigator.clipboard.writeText(latex).then(() => {
-          showToast('LaTeX 公式已复制', latex.length > 45 ? latex.slice(0, 45) + '...' : latex);
+          showToast('LaTeX 公式已复制 & 画板联动', latex.length > 40 ? latex.slice(0, 40) + '...' : latex);
         });
+        // KaTeX 即点即画：联动 Desmos 画板
+        if (window.__ANTI_DESMOS__) {
+          window.__ANTI_DESMOS__.plot(latex);
+        }
       }
     };
     document.addEventListener('click', onDocClick);
@@ -1434,6 +1444,16 @@
         return;
       }
 
+      // 1.5 Alt+D 快速开关 Desmos 数学画板
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'd' || e.key === 'D' || e.code === 'KeyD')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (window.__ANTI_DESMOS__) {
+          window.__ANTI_DESMOS__.toggleDrawer();
+        }
+        return;
+      }
+
       // 2. Alt+Shift+T 快速开关划词翻译
       if (e.altKey && e.shiftKey && (e.key === 't' || e.key === 'T')) {
         e.preventDefault();
@@ -1526,6 +1546,407 @@
   }
 
   // -------------------------------------------------------------
+  // 7.5 Desmos 数学画板控制器 (window.__ANTI_DESMOS__) & 脚本按需加载器
+  // -------------------------------------------------------------
+  function autoFixContinuousLatex(latex) {
+    if (!latex || typeof latex !== 'string') return '';
+    let s = latex.trim();
+    if (s.includes('\\left\\{') || s.includes('\\{') || s.includes(':')) {
+      return s;
+    }
+    const fracPattern = /^(?:y\s*=\s*)?\\frac\{\\sin(?:\(([^)]+)\)|\s*([a-zA-Z0-9.+*-]+))\s*\}\{x\}$/;
+    const m1 = s.match(fracPattern);
+    if (m1) {
+      const rawArg = (m1[1] || m1[2] || '').trim();
+      let limitVal = '1';
+      if (rawArg === 'x' || rawArg === '') {
+        limitVal = '1';
+      } else {
+        const coefMatch = rawArg.match(/^([0-9.]+)\s*\*?\s*x$/);
+        if (coefMatch) {
+          limitVal = coefMatch[1];
+        } else {
+          limitVal = rawArg.replace(/\*?\s*x$/, '') || '1';
+        }
+      }
+      const pureExpr = s.replace(/^y\s*=\s*/, '');
+      return `y=\\left\\{x=0:${limitVal},\\ ${pureExpr}\\right\\}`;
+    }
+    return s;
+  }
+
+  function is3DFormula(formula) {
+    if (!formula || typeof formula !== 'string') return false;
+    const s = formula.replace(/\s+/g, '');
+    return /\bz\b|[zZ]=|=[zZ]|\+z\^|\+z_|\([a-zA-Z0-9+\-*/.]+,[a-zA-Z0-9+\-*/.]+,[a-zA-Z0-9+\-*/.]+\)/.test(s);
+  }
+
+  const DesmosScriptLoader = {
+    _promise: null,
+    load() {
+      if (typeof window !== 'undefined' && window.Desmos) {
+        return Promise.resolve(window.Desmos);
+      }
+      if (this._promise) return this._promise;
+
+      this._promise = new Promise((resolve, reject) => {
+        if (typeof window !== 'undefined' && window.Desmos) return resolve(window.Desmos);
+        const existing = document.querySelector('script[data-desmos-api]');
+        if (existing) {
+          existing.addEventListener('load', () => resolve(window.Desmos));
+          existing.addEventListener('error', (e) => reject(e));
+          return;
+        }
+        const script = document.createElement('script');
+        script.setAttribute('data-desmos-api', 'true');
+        script.src = 'http://127.0.0.1:8325/assets/desmos_api.js';
+        script.onload = () => {
+          if (window.Desmos) {
+            resolve(window.Desmos);
+          } else {
+            reject(new Error('window.Desmos not found after script load'));
+          }
+        };
+        script.onerror = () => {
+          this._promise = null;
+          reject(new Error('Failed to load desmos_api.js from :8325'));
+        };
+        (document.head || document.documentElement).appendChild(script);
+      });
+      return this._promise;
+    }
+  };
+
+  const AntiDesmos = {
+    drawerEl: null,
+    calcContainer: null,
+    calc: null,
+    dimension: '2d',
+    expressions: [],
+    isOpen: false,
+
+    init() {
+      this.renderDrawer();
+    },
+
+    renderDrawer() {
+      let existing = document.querySelector('.anti-desmos-drawer');
+      if (existing) existing.remove();
+
+      const drawer = document.createElement('div');
+      drawer.className = 'anti-desmos-drawer';
+      drawer.innerHTML = `
+        <div class="anti-desmos-header">
+          <div class="anti-desmos-title-box">
+            <span>📐</span>
+            <span>Desmos 数学画板</span>
+          </div>
+          <div class="anti-desmos-dim-control">
+            <button class="anti-desmos-dim-btn is-active" data-dim="2d">2D 平面</button>
+            <button class="anti-desmos-dim-btn" data-dim="3d">3D 空间</button>
+          </div>
+          <div class="anti-desmos-actions">
+            <button class="anti-desmos-btn" data-action="clear" title="清空画布公式">🧹 清空</button>
+            <button class="anti-desmos-btn" data-action="export" title="导出高清 PNG 图像">💾 导出</button>
+            <button class="anti-desmos-btn-close" data-action="close" title="关闭画板 (Alt+D)">✕</button>
+          </div>
+        </div>
+        <div class="anti-desmos-body">
+          <div id="anti-desmos-calculator"></div>
+        </div>
+        <div class="anti-desmos-footer">
+          <div class="anti-desmos-status">
+            <div class="anti-desmos-status-dot"></div>
+            <span id="anti-desmos-status-text">画板就绪</span>
+          </div>
+          <span class="anti-desmos-shortcut-tip">Alt+D 开关 · 点 KaTeX 绘制</span>
+        </div>
+      `;
+
+      document.body.appendChild(drawer);
+      this.drawerEl = drawer;
+      this.calcContainer = drawer.querySelector('#anti-desmos-calculator');
+
+      const dimBtns = drawer.querySelectorAll('.anti-desmos-dim-btn');
+      dimBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.setDimension(btn.dataset.dim);
+        });
+      });
+
+      drawer.querySelector('[data-action="clear"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.clear();
+        showToast('🧹 Desmos 画板', '画布公式已清空');
+      });
+
+      drawer.querySelector('[data-action="export"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.exportImage();
+      });
+
+      drawer.querySelector('[data-action="close"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeDrawer();
+      });
+    },
+
+    async ensureCalculator(targetDim = this.dimension) {
+      if (!this.drawerEl) this.renderDrawer();
+      if (!this.calcContainer) this.calcContainer = this.drawerEl.querySelector('#anti-desmos-calculator');
+
+      await DesmosScriptLoader.load();
+
+      if (this.calc && this.dimension === targetDim) {
+        return this.calc;
+      }
+
+      if (this.calc) {
+        try { this.calc.destroy(); } catch {}
+        this.calc = null;
+        this.calcContainer.innerHTML = '';
+      }
+
+      this.dimension = targetDim;
+
+      if (this.drawerEl) {
+        const btns = this.drawerEl.querySelectorAll('.anti-desmos-dim-btn');
+        btns.forEach(b => {
+          if (b.dataset.dim === targetDim) b.classList.add('is-active');
+          else b.classList.remove('is-active');
+        });
+      }
+
+      const isDark = document.documentElement.getAttribute('data-anti-theme') === 'dark';
+      const commonOptions = {
+        keypad: false,
+        expressions: false,
+        settingsMenu: true,
+        zoomButtons: true,
+        invertedColors: isDark,
+        fontSize: 14,
+        border: false
+      };
+
+      if (targetDim === '3d') {
+        if (typeof window.Desmos.Calculator3D === 'function') {
+          this.calc = window.Desmos.Calculator3D(this.calcContainer, commonOptions);
+        } else {
+          console.warn('[AntiDesmos] Calculator3D not found, fallback to 2D');
+          this.calc = window.Desmos.GraphingCalculator(this.calcContainer, commonOptions);
+          this.dimension = '2d';
+        }
+      } else {
+        this.calc = window.Desmos.GraphingCalculator(this.calcContainer, commonOptions);
+      }
+
+      if (this.expressions && this.expressions.length > 0) {
+        this.expressions.forEach(e => {
+          try { this.calc.setExpression(e); } catch {}
+        });
+      }
+
+      this.updateStatus(targetDim === '3d' ? '3D 空间就绪' : '2D 平面就绪');
+      setTimeout(() => { try { this.calc?.resize?.(); } catch {} }, 60);
+
+      return this.calc;
+    },
+
+    updateStatus(text) {
+      const el = document.getElementById('anti-desmos-status-text');
+      if (el) el.textContent = text;
+    },
+
+    async setDimension(dim) {
+      if (dim !== '2d' && dim !== '3d') return;
+      await this.ensureCalculator(dim);
+      if (this.expressions.length === 0) {
+        if (dim === '3d') {
+          this.calc.setExpression({ id: 'surf_init', latex: 'z=x^2-y^2', color: '#2563eb' });
+        } else {
+          this.calc.setExpression({ id: 'expr_init', latex: 'y=\\sin(x)', color: '#2563eb', lineWidth: 3.5 });
+          try { this.calc.setMathBounds({ left: -6.28, right: 6.28, bottom: -2, top: 2 }); } catch {}
+        }
+      }
+    },
+
+    openDrawer() {
+      if (!this.drawerEl) this.renderDrawer();
+      this.drawerEl.classList.add('open');
+      this.isOpen = true;
+      this.ensureCalculator(this.dimension).then(() => {
+        setTimeout(() => { try { this.calc?.resize?.(); } catch {} }, 100);
+      });
+    },
+
+    closeDrawer() {
+      if (this.drawerEl) {
+        this.drawerEl.classList.remove('open');
+      }
+      this.isOpen = false;
+    },
+
+    toggleDrawer() {
+      if (this.isOpen) {
+        this.closeDrawer();
+      } else {
+        this.openDrawer();
+      }
+    },
+
+    async plot(formulas, options = {}) {
+      const rawList = Array.isArray(formulas) ? formulas : [formulas];
+      if (rawList.length === 0) return;
+
+      let targetDim = options.dimension || (options.threeD ? '3d' : (options.twoD ? '2d' : 'auto'));
+      if (targetDim === 'auto') {
+        const has3D = rawList.some(f => {
+          const str = typeof f === 'object' && f !== null ? (f.latex || f.expr || '') : String(f);
+          return is3DFormula(str);
+        });
+        targetDim = has3D ? '3d' : '2d';
+      }
+
+      this.openDrawer();
+      const calc = await this.ensureCalculator(targetDim);
+
+      if (!options.append) {
+        try { calc.setBlank(); } catch {}
+        this.expressions = [];
+      }
+
+      const formatted = rawList.map((f, idx) => {
+        if (typeof f === 'object' && f !== null) {
+          return {
+            id: f.id || (options.append ? `expr_live_${Date.now()}_${idx}` : `expr_${idx + 1}`),
+            latex: autoFixContinuousLatex(f.latex || f.expr || ''),
+            label: f.label,
+            showLabel: !!f.label,
+            color: f.color || options.color || undefined,
+            lineWidth: f.lineWidth || (targetDim === '3d' ? undefined : 3.5),
+            hidden: f.hidden !== undefined ? f.hidden : false
+          };
+        }
+        let latex = String(f);
+        let label = undefined;
+        if (latex.includes('#')) {
+          const parts = latex.split('#');
+          latex = parts[0].trim();
+          label = parts.slice(1).join('#').trim();
+        }
+        return {
+          id: options.append ? `expr_live_${Date.now()}_${idx}` : `expr_${idx + 1}`,
+          latex: autoFixContinuousLatex(latex),
+          label: label,
+          showLabel: !!label,
+          color: options.color || undefined,
+          lineWidth: targetDim === '3d' ? undefined : 3.5
+        };
+      });
+
+      formatted.forEach(e => {
+        try { calc.setExpression(e); } catch {}
+      });
+
+      this.expressions = options.append ? [...this.expressions, ...formatted] : formatted;
+
+      if (options.bounds && calc.setMathBounds) {
+        try { calc.setMathBounds(options.bounds); } catch {}
+      }
+
+      this.updateStatus(`已绘制 ${this.expressions.length} 条公式`);
+      showToast('📈 Desmos 绘图', `已渲染 ${formatted.length} 条公式 (${targetDim === '3d' ? '3D 空间' : '2D 平面'})`);
+      return { success: true, dimension: targetDim, expressions: this.expressions };
+    },
+
+    clear() {
+      if (this.calc) {
+        try { this.calc.setBlank(); } catch {}
+      }
+      this.expressions = [];
+      this.updateStatus('画布已清空');
+    },
+
+    exportImage(options = {}) {
+      if (!this.calc) {
+        showToast('导出失败', '计算器实例未就绪', true);
+        return;
+      }
+
+      const width = options.width || 1600;
+      const height = options.height || 1000;
+      const targetPixelRatio = options.targetPixelRatio || 2;
+      const filename = `desmos_plot_${Date.now()}.png`;
+
+      const download = (dataUri) => {
+        if (!dataUri) {
+          showToast('导出失败', '获取图片数据失败', true);
+          return;
+        }
+        const a = document.createElement('a');
+        a.download = filename;
+        a.href = dataUri;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast('💾 图像导出成功', filename);
+      };
+
+      try {
+        if (this.dimension === '3d') {
+          // 3D 走同步 screenshot
+          if (typeof this.calc.screenshot === 'function') {
+            const res = this.calc.screenshot({ width, height, targetPixelRatio });
+            if (typeof res === 'string') {
+              download(res);
+            } else if (res && typeof res.then === 'function') {
+              res.then(download);
+            } else if (typeof this.calc.asyncScreenshot === 'function') {
+              this.calc.asyncScreenshot({ width, height, targetPixelRatio }, download);
+            }
+          } else if (typeof this.calc.asyncScreenshot === 'function') {
+            this.calc.asyncScreenshot({ width, height, targetPixelRatio }, download);
+          }
+        } else {
+          // 2D 走 asyncScreenshot
+          if (typeof this.calc.asyncScreenshot === 'function') {
+            this.calc.asyncScreenshot({ width, height, targetPixelRatio }, download);
+          } else if (typeof this.calc.screenshot === 'function') {
+            const res = this.calc.screenshot({ width, height, targetPixelRatio });
+            if (typeof res === 'string') download(res);
+          }
+        }
+      } catch (err) {
+        showToast('导出异常', err.message, true);
+      }
+    },
+
+    handlePlotPayload(payload) {
+      if (!payload) return;
+      if (payload.action === 'clear') {
+        this.clear();
+        return;
+      }
+      this.plot(payload.expressions || [], {
+        action: payload.action,
+        dimension: payload.dimension,
+        bounds: payload.bounds,
+        append: payload.action === 'append'
+      });
+    },
+
+    updateTheme(isDark) {
+      if (this.calc && typeof this.calc.updateSettings === 'function') {
+        try {
+          this.calc.updateSettings({ invertedColors: isDark });
+        } catch {}
+      }
+    }
+  };
+  window.__ANTI_DESMOS__ = AntiDesmos;
+
+  // -------------------------------------------------------------
   // 8. 可拖拽 FAB 悬浮控制球 (功能中心)
   // -------------------------------------------------------------
   function initFloatingBall() {
@@ -1549,7 +1970,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.8.1 VIP</span>
+          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.9.0 VIP</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="plan-mode" title="按 Shift+Tab 或 Alt+P 快速切换">
@@ -1558,6 +1979,14 @@
             <span>计划模式</span>
           </div>
           <span class="anti-fab-badge" id="anti-fab-plan-mode">标准</span>
+        </button>
+
+        <button class="anti-fab-menu-item" data-action="desmos" title="按 Alt+D 快速开关 Desmos 数学画板">
+          <div class="anti-fab-item-left">
+            <span>📈</span>
+            <span>Desmos 画板</span>
+          </div>
+          <span class="anti-fab-badge is-active" id="anti-fab-desmos">Alt+D</span>
         </button>
 
         <button class="anti-fab-menu-item" data-action="theme" title="点击循环切换外观主题：反重力暖色 / 纯白明亮 / 沉浸暗黑">
@@ -1775,6 +2204,11 @@
         }
         showToast('Trancy 划词翻译', toastMsg);
 
+      } else if (action === 'desmos') {
+        if (window.__ANTI_DESMOS__) {
+          window.__ANTI_DESMOS__.toggleDrawer();
+        }
+        toggleMenu(false);
       } else if (action === 'vocab') {
         const count = TrancyVocabulary.getAll().length;
         showToast('📚 Trancy 生词本', `正在与官方云端双向同步... 当前本地共 ${count} 词`);
@@ -1827,6 +2261,7 @@
   // 9. 启动全套能力
   // -------------------------------------------------------------
   ThemeManager.init();
+  AntiDesmos.init();
   initFormulaCopy();
   initTrancySelection();
   initKeyboardShortcuts();

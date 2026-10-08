@@ -1,10 +1,12 @@
 const vscode = require('vscode');
 const http = require('http');
 const { CDPInjector } = require('./cdp/injector');
+const { DesmosServer } = require('./cdp/desmos-server');
 const { VocabularyViewProvider } = require('./vocabulary/vocabulary-view');
 const vocabStore = require('./vocabulary/vocabulary-store');
 
 let injector = null;
+let desmosServer = null;
 let statusBarItem = null;
 let vocabProvider = null;
 
@@ -95,19 +97,24 @@ function activate(context) {
     vscode.window.registerWebviewViewProvider('antiEnhance.vocabularyView', vocabProvider)
   );
 
-  // 3. Initialize CDP Injector
+  // 3. Initialize CDP Injector & Desmos Server
   const outputChannel = vscode.window.createOutputChannel('Anti Trancy Enhancements');
   injector = new CDPInjector((msg) => outputChannel.appendLine(msg));
   injector.start();
 
+  desmosServer = new DesmosServer(injector, (msg) => outputChannel.appendLine(msg));
+  desmosServer.start();
+
   // 4. Register Commands
   const toggleCmd = vscode.commands.registerCommand('antiEnhance.toggle', async () => {
     if (injector.isRunning) {
+      if (desmosServer) desmosServer.stop();
       injector.stop();
       updateStatusBar(false);
       vscode.window.showInformationMessage('Antigravity Trancy 增强套件已暂停。');
     } else {
       injector.start();
+      if (desmosServer) desmosServer.start();
       updateStatusBar(true);
       vscode.window.showInformationMessage('Antigravity Trancy 增强套件已激活！');
     }
@@ -196,6 +203,10 @@ function activate(context) {
 }
 
 function deactivate() {
+  if (desmosServer) {
+    desmosServer.stop();
+    desmosServer = null;
+  }
   if (injector) {
     injector.stop();
     injector = null;

@@ -1,4 +1,4 @@
-/* Antigravity Web Enhancements Client Styles (v2.8.1) */
+/* Antigravity Web Enhancements Client Styles (v2.9.0) */
 
 /* =============================================================
    0. 主题变量系统 (反重力羊皮纸暖色 / 纯白明亮 / 沉浸暗黑 三大主题自由切换)
@@ -963,4 +963,173 @@ html.anti-width-resizing .w-full.animate-fade-in:has([contenteditable="true"]) {
 @keyframes trancy-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* =============================================================
+   10. Desmos 数学画板抽屉 (.anti-desmos-drawer)
+   严格遵循视口几何满宽守卫：纯 fixed 右侧抽屉，绝不侵入 html/body 或对话流宽度
+   自适应 anti / light / dark 三大主题系统
+   ============================================================= */
+
+.anti-desmos-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 480px;
+  height: 100vh;
+  z-index: 99998;
+  display: flex;
+  flex-direction: column;
+  background: var(--anti-card-bg);
+  border-left: 1px solid var(--anti-card-border);
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(12px);
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.anti-desmos-drawer.open {
+  transform: translateX(0);
+}
+
+/* 抽屉顶部工具栏 */
+.anti-desmos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--anti-footer-border);
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.anti-desmos-title-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--anti-card-text);
+}
+
+.anti-desmos-dim-control {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--anti-phonetic-bg);
+  border: 1px solid var(--anti-btn-border);
+  gap: 2px;
+}
+
+.anti-desmos-dim-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--anti-btn-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.anti-desmos-dim-btn.is-active {
+  background: var(--anti-card-bg);
+  color: var(--anti-word-color);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.anti-desmos-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.anti-desmos-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 5px;
+  border: 1px solid var(--anti-btn-border);
+  background: var(--anti-phonetic-bg);
+  color: var(--anti-btn-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.anti-desmos-btn:hover {
+  background: var(--anti-btn-hover-bg);
+  color: var(--anti-btn-hover-color);
+}
+
+.anti-desmos-btn-close {
+  padding: 4px 7px;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 5px;
+  border: 1px solid var(--anti-btn-border);
+  background: transparent;
+  color: var(--anti-btn-color);
+  cursor: pointer;
+}
+
+.anti-desmos-btn-close:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* 画布容器 */
+.anti-desmos-body {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: transparent;
+}
+
+#anti-desmos-calculator {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* 底部状态与快捷键提示 */
+.anti-desmos-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  border-top: 1px solid var(--anti-footer-border);
+  font-size: 11px;
+  color: var(--anti-footer-text);
+  flex-shrink: 0;
+}
+
+.anti-desmos-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.anti-desmos-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.anti-desmos-shortcut-tip {
+  opacity: 0.75;
+  font-family: monospace;
 }

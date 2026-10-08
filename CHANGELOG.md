@@ -1,5 +1,37 @@
 # Antigravity Enhancements 更新与逆向日志 (CHANGELOG)
 
+## [v2.9.0] - 2026-10-08
+
+### 🌟 核心突破 (Antigravity 原生挂载 Desmos 2D/3D 数学画板与双端通信直推)
+- **资产与通信服务层 (`DesmosServer`)**：
+  - 本地轻量化独立服务在 `:8325` 端口平稳常驻；
+  - 离线 Desmos 4.3MB 核心资产（`desmos_api.js`）零网络依赖本地静态托管 (`GET /assets/desmos_api.js`)；
+  - 搭载 0ms 零延迟 CDP 渲染推送 (`POST /api/plot`)，当收到绘图请求时，通过 Chrome DevTools Protocol 瞬间直推到 Antigravity 宿主 Web DOM；
+  - 在守护进程 `daemon.js` 与插件入口 `extension.js` 中全生命周期挂载与优雅启停。
+- **客户端渲染与交互层 (`.anti-desmos-drawer` & `window.__ANTI_DESMOS__`)**：
+  - 纯 Fixed 右侧抽屉架构（宽 480px，高 100vh），严格遵循视口满宽几何守卫，绝不侵入主窗口或对话流；
+  - 深度自适应反重力羊皮纸暖色 (anti)、纯白 (light) 与沉浸暗黑 (dark) 三大主题；
+  - 全局控制器 `window.__ANTI_DESMOS__` 支持 2D 平面 (`GraphingCalculator`) 与 3D 空间 (`Calculator3D`) 双引擎毫秒级平滑切换；
+  - 图像高清导出规范化：2D 调用 `asyncScreenshot`，3D 调用同步 `screenshot`；
+  - 支持公式平滑修复（`autoFixContinuousLatex` 消除可去间断点白斑）；
+  - 全功能键盘快捷键 `Alt+D` 快速开关抽屉；
+  - KaTeX 公式即点即画：点击对话流中的公式在复制 LaTeX 的同时瞬间在 Desmos 画板上渲染展开；
+  - FAB 悬浮球功能中心同步挂载 Desmos 画板菜单项。
+- **多端自适应 CLI 改造 (`desmos-cli`)**：
+  - 改造 `desmos-cli/src/dsh-client.js`，并发探测 DSH (:3080) 与 Antigravity (:8325)；
+  - 支持向 Antigravity 0ms 直推、向 DSH 直推以及多端同时在线时的自动广播；
+  - CLI 控制台智能展示推送目标与维度状态。
+- **四位版本号严格对齐至 v2.9.0**：
+  - 同步更新 `package.json`、`src/cdp/client-assets.js`、`src/cdp/injector.js` 与 `src/client/client.js`。
+- **自动化冒烟验收升级为 11 级物理门禁**：
+  - 门禁 1 新增 `src/assets/desmos_api.js` 与 `src/cdp/desmos-server.js` 完整性核对；
+  - 门禁 3 升级为 v2.9.0 版本对齐与 `window.__ANTI_DESMOS__` 控制器回读；
+  - 门禁 10 视口满宽几何与双重约束继续保持 100% PASS；
+  - 新增门禁 11：覆盖 :8325 服务状态探测、离线脚本加载、2D/3D 双维度画板切换、desmos-cli 真实直推联动与实机渲染存证截图 (`tests/artifacts/smoke_desmos_rendered.png`)；
+  - 11 级物理门禁 100% 全部通过。
+
+---
+
 ## [v2.8.1] - 2026-10-08
 
 ### 🚨 紧急热修复 (根除误伤根容器导致侧边栏截断与窗口错位，恢复满宽几何对齐)

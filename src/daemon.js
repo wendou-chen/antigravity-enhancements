@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const { CDPInjector } = require('./cdp/injector');
+const { DesmosServer } = require('./cdp/desmos-server');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const LOG_FILE = path.join(ROOT_DIR, 'daemon.log');
@@ -45,6 +46,9 @@ log(`[Daemon] Watching Antigravity DevToolsActivePort for auto-injection...`);
 const injector = new CDPInjector(log);
 injector.start();
 
+const desmosServer = new DesmosServer(injector, log);
+desmosServer.start();
+
 // 2. Active Heartbeat Watchdog: keeps event loop alive & recovers loop if frozen
 const heartbeatInterval = setInterval(() => {
   try {
@@ -57,6 +61,7 @@ const heartbeatInterval = setInterval(() => {
 function cleanup() {
   log('[Daemon] Shutting down daemon...');
   clearInterval(heartbeatInterval);
+  desmosServer.stop();
   injector.stop();
   try {
     if (fs.existsSync(PID_FILE)) {
