@@ -231,5 +231,38 @@ Trancy 客户端对 AI 上下文消歧项采用了一套标志性的视觉语言
   - FAB 控制中心外观主题支持点击循环热切换：`反重力` ➔ `纯白` ➔ `暗黑` ➔ `反重力`；
   - 持久化至 `safeStorage`（`anti_enhance_theme_mode`），开机与启动 0ms 直出用户偏好。
 
+---
+
+## 九、对话区无级平滑宽度调节与新版 DOM 布局错位排障 (v2.8.0)
+
+### 1. 宿主更新后的布局破坏根因
+- **CSS 变量层叠死锁**：早期版本在 `[data-anti-theme="anti|light|dark"]` 中重复声明了 `--anti-chat-max-width: 896px;`。由于属性选择器权重高于 `html` 行内继承，JS 动态修改 `--anti-chat-max-width` 被主题规则完全遮蔽阻断；
+- **输入框选择器失效**：原 `[class*="group/user-input-step"]` 在 Antigravity 新版中已被重构废除；
+- **宿主行内 `max(30vw, ...)` 隐式下限钳位**：
+  ```html
+  <div style="max-width: max(30vw, var(--max-conversation-width, 48rem));" class="mx-auto w-full relative ...">
+  ```
+  在 2K/4K 大屏下，`30vw` 会强制将输入框锁定在 768px~1152px 以上。若仅改动消息流，两者会产生严重的撕裂错位，必须通过黄金选择器加 `!important` 击穿宿主行内钳位；
+- **宽泛选择器污染设置抽屉风险**：通配符 `[class*="overflow-y-auto"] > div.mx-auto` 会直接拉爆官方设置面板与插件抽屉，必须彻底弃用。
+
+### 2. 黄金原子选择器矩阵契约
+```css
+.md-table-bleed > .mx-auto.w-full,
+[style*="max-conversation-width"],
+.w-full.animate-fade-in:has([contenteditable="true"]) {
+  max-width: var(--anti-chat-max-width) !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  transition: max-width 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+```
+
+### 3. 60fps 高性能拖拽与指针锁防护
+- **局部过渡隔离**：拖拽滑块期间向根节点挂载 `anti-width-resizing` 类，仅针对上述受控容器关闭 `transition: none !important;`，严禁使用 `*` 通配符引起数千 DOM 节点重排；
+- **指针脱离菜单保护**：拖拽滑块超出 FAB 菜单并在宿主窗口松开时，必须通过 `isResizingWidth` 锁及全局 `window.addEventListener('pointerup')` 兜底拦截，防止 `onDocClick` 意外误关菜单；
+- **弹性反序列化与多路变量分发**：支持纯数字、`px`、百分比及预设名，统一向 `:root` 分发 `--anti-chat-max-width`、`--max-conversation-width`、`--max-artifact-width`。
+
+
 
 
