@@ -113,7 +113,7 @@ async function runSmokeTest() {
     hasGlobalConfig: Boolean(window.__TRANCY_GLOBAL_CONFIG__)
   })`);
 
-  if (domState.hasStyle && domState.styleVersion === '2.7.0') {
+  if (domState.hasStyle && domState.styleVersion === '2.8.0') {
     logPass(`样式表注入就绪，版本对齐: v${domState.styleVersion}`);
   } else {
     logFail(`样式表状态异常: ${JSON.stringify(domState)}`);
@@ -266,6 +266,58 @@ async function runSmokeTest() {
     logPass('ThemeManager 三主题就绪: [反重力暖色] / [纯白明亮] / [沉浸暗黑] 三向热切换与 DOM 属性、Badge 同步 100% 成功');
   } else {
     logFail(`ThemeManager 验证异常: ${JSON.stringify(themeCheck)}`);
+  }
+
+  // 门禁 10：对话区无级宽度调节与变量同步验证 (WidthManager)
+  console.log('\n[门禁 10: 对话区无级平滑宽度调节与 CSS 变量同步验证]');
+  const widthCheck = await evalInPage(`(() => {
+    const wm = window.__ANTI_WIDTH_MANAGER__;
+    if (!wm) return { error: 'NO_WIDTH_MANAGER' };
+
+    const initialWidth = wm.currentWidth;
+    const initialMode = wm.currentMode;
+
+    // 1. 测试设置自定义宽度 (1280px)
+    wm.apply('1280px');
+    const customCssVal = document.documentElement.style.getPropertyValue('--anti-chat-max-width');
+    const customMaxConv = document.documentElement.style.getPropertyValue('--max-conversation-width');
+    const customMaxArt = document.documentElement.style.getPropertyValue('--max-artifact-width');
+    const isCustomApplied = customCssVal === '1280px' && customMaxConv === '1280px' && customMaxArt === '1280px';
+
+    // 2. 测试预设 compact (760px) 与 full (100%)
+    wm.apply('compact');
+    const compactCssVal = document.documentElement.style.getPropertyValue('--anti-chat-max-width');
+    const isCompactApplied = compactCssVal === '760px';
+
+    wm.apply('full');
+    const fullCssVal = document.documentElement.style.getPropertyValue('--anti-chat-max-width');
+    const isFullApplied = fullCssVal === '100%';
+
+    // 3. 测试拖拽样式隔离类切换
+    document.documentElement.classList.add('anti-width-resizing');
+    const hasResizingClass = document.documentElement.classList.contains('anti-width-resizing');
+    document.documentElement.classList.remove('anti-width-resizing');
+    const removedResizingClass = !document.documentElement.classList.contains('anti-width-resizing');
+
+    // 4. 恢复初始设置
+    wm.apply(initialMode || initialWidth || 'standard');
+    const isRestored = Boolean(document.documentElement.style.getPropertyValue('--anti-chat-max-width'));
+
+    return {
+      hasWm: true,
+      isCustomApplied,
+      isCompactApplied,
+      isFullApplied,
+      hasResizingClass,
+      removedResizingClass,
+      isRestored
+    };
+  })()`);
+
+  if (widthCheck && widthCheck.hasWm && widthCheck.isCustomApplied && widthCheck.isCompactApplied && widthCheck.isFullApplied && widthCheck.hasResizingClass && widthCheck.removedResizingClass && widthCheck.isRestored) {
+    logPass('WidthManager 无级平滑宽度调节就绪: [1280px 自定义] / [紧凑 760px] / [全宽 100%] 变量下发与隔离类验证 100% 成功');
+  } else {
+    logFail(`WidthManager 验证异常: ${JSON.stringify(widthCheck)}`);
   }
 
   ws.close();

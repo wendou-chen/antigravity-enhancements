@@ -1,7 +1,7 @@
 /**
- * Antigravity Web Enhancements Client Payload
+ * Antigravity Web Enhancements Client Payload (v2.8.0 VIP)
  * Injected into Antigravity Workspace DOM via Chrome DevTools Protocol
- * Features: LaTeX Copy, Mermaid Render, Trancy Selection Translation, Vocabulary Favorites, Width Adjust
+ * Features: LaTeX Copy, Mermaid Render, Trancy Selection Translation, Vocabulary Favorites, Smooth Width Slider
  */
 (function () {
   // 安全存储封装（兼容 data: URL 等禁用 localStorage 的沙箱环境）
@@ -56,6 +56,7 @@
   window.__ANTI_ENHANCEMENTS_CLEANUP__ = function() {
     cleanups.forEach(fn => { try { fn(); } catch(e){} });
     document.querySelectorAll('.anti-fab-container, .anti-quote-toolbar, .trancy-card-container, .trancy-voice-overlay, .anti-input-mic-btn').forEach(el => el.remove());
+    if (document.documentElement) document.documentElement.classList.remove('anti-width-resizing');
   };
 
   // 0. 锁定视口溢出
@@ -70,14 +71,60 @@
     }
   } catch {}
 
-  // Width Modes
+  // -------------------------------------------------------------
+  // Width Modes & Manager (v2.8.0)
+  // -------------------------------------------------------------
   const WIDTH_MODES = {
-    compact: { key: 'compact', label: '紧凑 760px', width: '760px' },
-    standard: { key: 'standard', label: '标准 896px', width: '896px' },
-    wide: { key: 'wide', label: '宽屏 1140px', width: '1140px' },
-    full: { key: 'full', label: '全宽 100%', width: '100%' }
+    compact: { key: 'compact', label: '紧凑 760px', width: '760px', num: 760 },
+    standard: { key: 'standard', label: '标准 896px', width: '896px', num: 896 },
+    wide: { key: 'wide', label: '宽屏 1140px', width: '1140px', num: 1140 },
+    full: { key: 'full', label: '全宽 100%', width: '100%', num: 1800 }
   };
   const WIDTH_ORDER = ['compact', 'standard', 'wide', 'full'];
+
+  /**
+   * 弹性宽度解析器：
+   * 支持预设名 ('compact', 'standard', 'wide', 'full')、
+   * 百分比 ('100%')、纯数字 (1050) 或像素字符串 ('1050px')
+   */
+  function parseWidthValue(val) {
+    if (typeof val === 'string') {
+      const lower = val.trim().toLowerCase();
+      if (WIDTH_MODES[lower]) {
+        const m = WIDTH_MODES[lower];
+        return { key: m.key, cssVal: m.width, num: m.num, isFull: m.key === 'full', label: m.label };
+      }
+      if (lower === '100%' || lower === 'full') {
+        const m = WIDTH_MODES.full;
+        return { key: 'full', cssVal: '100%', num: 1800, isFull: true, label: m.label };
+      }
+      const numMatch = lower.match(/^(\d+)(px)?$/);
+      if (numMatch) {
+        const n = parseInt(numMatch[1], 10);
+        let key = 'custom';
+        let label = `${n}px`;
+        if (n === 760) key = 'compact';
+        else if (n === 896) key = 'standard';
+        else if (n === 1140) key = 'wide';
+        return { key, cssVal: `${n}px`, num: n, isFull: false, label };
+      }
+    } else if (typeof val === 'number' && !isNaN(val)) {
+      const n = Math.round(val);
+      let key = 'custom';
+      let label = `${n}px`;
+      if (n === 760) key = 'compact';
+      else if (n === 896) key = 'standard';
+      else if (n === 1140) key = 'wide';
+      return { key, cssVal: `${n}px`, num: n, isFull: false, label };
+    }
+
+    // 默认回退为标准 896px
+    const def = WIDTH_MODES.standard;
+    return { key: def.key, cssVal: def.width, num: def.num, isFull: false, label: def.label };
+  }
+
+  const savedWidthVal = safeStorage.getItem('anti_enhance_chat_width') || 'standard';
+  const initialParsedWidth = parseWidthValue(savedWidthVal);
 
   // State
   const state = {
@@ -88,32 +135,71 @@
     get trancyTriggerMode() { return window.__TRANCY_GLOBAL_CONFIG__.triggerMode; },
     set trancyTriggerMode(val) { window.__TRANCY_GLOBAL_CONFIG__.triggerMode = val; safeStorage.setItem('anti_trancy_trigger_mode', val); },
     sendMode: safeStorage.getItem('anti_enhance_send_mode') || 'ctrl-enter',
-    widthMode: safeStorage.getItem('anti_enhance_chat_width') || 'standard',
+    widthMode: initialParsedWidth.key,
+    chatWidth: initialParsedWidth.cssVal,
   };
 
-  function applyChatWidth(modeKey, notify = false) {
-    const mode = WIDTH_MODES[modeKey] || WIDTH_MODES.standard;
-    state.widthMode = mode.key;
-    safeStorage.setItem('anti_enhance_chat_width', mode.key);
-    document.documentElement.style.setProperty('--anti-chat-max-width', mode.width);
+  function applyChatWidth(val, notify = false) {
+    const parsed = parseWidthValue(val);
+    state.widthMode = parsed.key;
+    state.chatWidth = parsed.cssVal;
+    safeStorage.setItem('anti_enhance_chat_width', parsed.key === 'custom' ? parsed.cssVal : parsed.key);
+
+    // 同步分发 CSS 变量 (穿透宿主行内 max(30vw, ...) 钳位)
+    document.documentElement.style.setProperty('--anti-chat-max-width', parsed.cssVal);
+    document.documentElement.style.setProperty('--max-conversation-width', parsed.cssVal);
+    document.documentElement.style.setProperty('--max-artifact-width', parsed.cssVal);
+
+    // 同步 FAB 组件状态
+    const display = document.getElementById('anti-width-value-display');
+    if (display) {
+      display.textContent = parsed.isFull ? '100% 全宽' : parsed.cssVal;
+    }
+
+    const slider = document.getElementById('anti-width-slider');
+    if (slider) {
+      slider.value = parsed.num;
+    }
 
     const badge = document.getElementById('anti-fab-width');
     if (badge) {
-      badge.textContent = mode.label.split(' ')[0];
+      badge.textContent = parsed.isFull ? '全宽' : (parsed.key !== 'custom' ? WIDTH_MODES[parsed.key].label.split(' ')[0] : parsed.cssVal);
     }
 
+    // 更新 4 组预设按钮的激活高亮状态
+    const presetBtns = document.querySelectorAll('.anti-fab-preset-btn');
+    presetBtns.forEach(btn => {
+      const pKey = btn.dataset.preset;
+      if (pKey === parsed.key) {
+        btn.classList.add('is-active');
+      } else {
+        btn.classList.remove('is-active');
+      }
+    });
+
     if (notify) {
-      showToast('📐 页面宽度已切换', mode.label);
+      showToast('📐 页面宽度已切换', parsed.isFull ? '全宽 100%' : parsed.cssVal);
     }
   }
 
   function cycleChatWidth() {
-    const currentIndex = WIDTH_ORDER.indexOf(state.widthMode);
+    let currentIndex = WIDTH_ORDER.indexOf(state.widthMode);
+    if (currentIndex === -1) currentIndex = 1;
     const nextIndex = (currentIndex + 1) % WIDTH_ORDER.length;
     applyChatWidth(WIDTH_ORDER[nextIndex], true);
   }
 
-  applyChatWidth(state.widthMode, false);
+  // 挂载全局 WidthManager 供自动化门禁测试与外部交互
+  window.__ANTI_WIDTH_MANAGER__ = {
+    get currentWidth() { return state.chatWidth || '896px'; },
+    get currentMode() { return state.widthMode || 'standard'; },
+    parseWidthValue,
+    apply: (val, notify) => applyChatWidth(val, notify),
+    cycle: () => cycleChatWidth(),
+    MODES: WIDTH_MODES
+  };
+
+  applyChatWidth(savedWidthVal, false);
 
   console.log('[AntiEnhance] Initializing Antigravity Web Enhancements v2.0 (Global Guard Active)...');
 
@@ -1455,7 +1541,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.7.0 VIP</span>
+          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.8.0 VIP</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="plan-mode" title="按 Shift+Tab 或 Alt+P 快速切换">
@@ -1490,13 +1576,23 @@
           <span class="anti-fab-badge" id="anti-fab-vocab-count">${TrancyVocabulary.getAll().length} 词</span>
         </button>
 
-        <button class="anti-fab-menu-item" data-action="chat-width">
-          <div class="anti-fab-item-left">
-            <span>📐</span>
-            <span>对话区宽度</span>
+        <div class="anti-fab-slider-box" id="anti-fab-width-slider-box">
+          <div class="anti-fab-slider-header">
+            <div class="anti-fab-slider-header-left">
+              <span>📐</span>
+              <span>对话区宽度</span>
+              <span class="anti-fab-badge" id="anti-fab-width" style="display:none;">${state.widthMode}</span>
+            </div>
+            <span class="anti-fab-slider-value" id="anti-width-value-display">${state.chatWidth === '100%' ? '100% 全宽' : state.chatWidth}</span>
           </div>
-          <span class="anti-fab-badge" id="anti-fab-width">${(WIDTH_MODES[state.widthMode] || WIDTH_MODES.standard).label.split(' ')[0]}</span>
-        </button>
+          <input type="range" class="anti-fab-slider" id="anti-width-slider" min="680" max="1800" step="10" value="${(parseWidthValue(state.chatWidth)).num}" />
+          <div class="anti-fab-presets">
+            <button type="button" class="anti-fab-preset-btn ${state.widthMode === 'compact' ? 'is-active' : ''}" data-preset="compact">紧凑 760</button>
+            <button type="button" class="anti-fab-preset-btn ${state.widthMode === 'standard' ? 'is-active' : ''}" data-preset="standard">标准 896</button>
+            <button type="button" class="anti-fab-preset-btn ${state.widthMode === 'wide' ? 'is-active' : ''}" data-preset="wide">宽屏 1140</button>
+            <button type="button" class="anti-fab-preset-btn ${state.widthMode === 'full' ? 'is-active' : ''}" data-preset="full">全宽 100%</button>
+          </div>
+        </div>
 
         <button class="anti-fab-menu-item" data-action="send-mode">
           <div class="anti-fab-item-left">
@@ -1531,6 +1627,16 @@
         if (vocabBadge) vocabBadge.textContent = TrancyVocabulary.getAll().length + ' 词';
         const planBadge = document.getElementById('anti-fab-plan-mode');
         if (planBadge) updateFabPlanBadge();
+        const curParsed = parseWidthValue(state.chatWidth);
+        const wSlider = document.getElementById('anti-width-slider');
+        if (wSlider) wSlider.value = curParsed.num;
+        const wDisplay = document.getElementById('anti-width-value-display');
+        if (wDisplay) wDisplay.textContent = curParsed.isFull ? '100% 全宽' : curParsed.cssVal;
+        const pBtns = container.querySelectorAll('.anti-fab-preset-btn');
+        pBtns.forEach(btn => {
+          if (btn.dataset.preset === curParsed.key) btn.classList.add('is-active');
+          else btn.classList.remove('is-active');
+        });
       } else {
         menu.classList.remove('is-active');
       }
@@ -1572,6 +1678,49 @@
       if (!hasMoved) {
         toggleMenu();
       }
+    });
+
+    // 滑块拖拽状态锁与事件 (60fps 无级平滑与防关闭保护)
+    let isResizingWidth = false;
+    const widthSlider = container.querySelector('#anti-width-slider');
+    const presetBtns = container.querySelectorAll('.anti-fab-preset-btn');
+
+    if (widthSlider) {
+      const onSliderStart = () => {
+        isResizingWidth = true;
+        document.documentElement.classList.add('anti-width-resizing');
+      };
+
+      const onSliderInput = (e) => {
+        const val = parseInt(e.target.value, 10);
+        applyChatWidth(`${val}px`, false);
+      };
+
+      const onSliderEnd = () => {
+        if (!isResizingWidth) return;
+        document.documentElement.classList.remove('anti-width-resizing');
+        setTimeout(() => {
+          isResizingWidth = false;
+        }, 80);
+      };
+
+      widthSlider.addEventListener('pointerdown', onSliderStart);
+      widthSlider.addEventListener('input', onSliderInput);
+      widthSlider.addEventListener('pointerup', onSliderEnd);
+      widthSlider.addEventListener('change', () => {
+        showToast('📐 页面宽度已调整', state.chatWidth);
+      });
+
+      window.addEventListener('pointerup', onSliderEnd);
+      cleanups.push(() => window.removeEventListener('pointerup', onSliderEnd));
+    }
+
+    presetBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const pKey = btn.dataset.preset;
+        applyChatWidth(pKey, true);
+      });
     });
 
     menu.addEventListener('click', (e) => {
@@ -1648,6 +1797,7 @@
     });
 
     const onDocClick = (e) => {
+      if (isResizingWidth) return;
       if (!container.contains(e.target)) {
         toggleMenu(false);
       }

@@ -1,15 +1,18 @@
-/* Antigravity Web Enhancements Client Styles (v2.7.0) */
+/* Antigravity Web Enhancements Client Styles (v2.8.0) */
 
 /* =============================================================
    0. 主题变量系统 (反重力羊皮纸暖色 / 纯白明亮 / 沉浸暗黑 三大主题自由切换)
    ============================================================= */
+
+:root {
+  --anti-chat-max-width: 896px;
+}
 
 /* -------------------------------------------------------------
    0.1 反重力原宿主主题 (Antigravity Solarized Warm 羊皮纸护眼暖色 - 默认)
    契合反重力宿主当前界面的 #FAF4E5 暖色底，护眼温润，彻底消除纯白刺眼感
    ------------------------------------------------------------- */
 :root, [data-anti-theme="anti"] {
-  --anti-chat-max-width: 896px;
 
   /* 容器与卡片：温润暖象牙羊皮纸色，与 #FAF4E5 宿主背景浑然天成 */
   --anti-card-bg: rgba(251, 247, 238, 0.97);
@@ -73,8 +76,6 @@
    0.2 纯白明亮主题 (Pure Light 纯白天光雪白)
    ------------------------------------------------------------- */
 [data-anti-theme="light"] {
-  --anti-chat-max-width: 896px;
-
   /* 容器与卡片 */
   --anti-card-bg: rgba(255, 255, 255, 0.98);
   --anti-card-border: rgba(0, 0, 0, 0.09);
@@ -137,8 +138,6 @@
    0.3 沉浸暗黑主题 (Dark 曜石深黑夜间模式)
    ------------------------------------------------------------- */
 [data-anti-theme="dark"] {
-  --anti-chat-max-width: 896px;
-
   /* 容器与卡片 */
   --anti-card-bg: rgba(22, 23, 27, 0.94);
   --anti-card-border: rgba(255, 255, 255, 0.16);
@@ -207,16 +206,22 @@ html, body {
   box-sizing: border-box;
 }
 
-/* 消息流与输入框居中约束 (全屏自由调宽/中央聚焦) */
+/* 精准消息流、输入框与代码产物宽度约束 (居中聚焦与自由调宽) */
 .md-table-bleed > .mx-auto.w-full,
-[class*="group/user-input-step"],
-.md-table-bleed > div,
-[class*="overflow-y-auto"] > div.mx-auto {
+[style*="max-conversation-width"],
+.w-full.animate-fade-in:has([contenteditable="true"]) {
   max-width: var(--anti-chat-max-width) !important;
   width: 100% !important;
   margin-left: auto !important;
   margin-right: auto !important;
   transition: max-width 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* 拖拽滑动条期间局部过渡隔离，仅针对目标元素关闭 transition，杜绝掉帧与撕裂 */
+html.anti-width-resizing .md-table-bleed > .mx-auto.w-full,
+html.anti-width-resizing [style*="max-conversation-width"],
+html.anti-width-resizing .w-full.animate-fade-in:has([contenteditable="true"]) {
+  transition: none !important;
 }
 
 /* 1. LaTeX 公式高亮与点击反馈 */
@@ -415,7 +420,7 @@ html, body {
   position: absolute;
   bottom: 50px;
   right: 0;
-  min-width: 230px;
+  min-width: 240px;
   background: var(--anti-menu-bg);
   border: 1px solid var(--anti-menu-border);
   border-radius: 12px;
@@ -489,6 +494,117 @@ html, body {
 
 .anti-fab-badge.is-active {
   background: rgba(59, 130, 246, 0.2);
+  color: #3B82F6;
+  font-weight: 600;
+}
+
+/* 4.1 FAB 宽度调节滑块与预设组件样式 (v2.8.0) */
+.anti-fab-slider-box {
+  padding: 8px 10px 8px;
+  border-radius: 8px;
+  background: rgba(180, 160, 130, 0.09);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 3px 0;
+  border: 1px solid var(--anti-btn-border);
+}
+
+[data-anti-theme="light"] .anti-fab-slider-box {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+[data-anti-theme="dark"] .anti-fab-slider-box {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.anti-fab-slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--anti-card-text);
+  font-weight: 500;
+  user-select: none;
+}
+
+.anti-fab-slider-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.anti-fab-slider-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--anti-phonetic-bg);
+  color: var(--anti-phonetic-color);
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.anti-fab-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--anti-btn-border);
+  outline: none;
+  margin: 4px 0 2px;
+  cursor: pointer;
+}
+
+.anti-fab-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #3B82F6;
+  border: 2px solid #FFFFFF;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.anti-fab-slider::-webkit-slider-thumb:hover,
+.anti-fab-slider:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.35);
+}
+
+.anti-fab-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.anti-fab-preset-btn {
+  padding: 3px 0;
+  font-size: 10px;
+  text-align: center;
+  border-radius: 6px;
+  border: 1px solid var(--anti-btn-border);
+  background: transparent;
+  color: var(--anti-btn-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+  user-select: none;
+}
+
+.anti-fab-preset-btn:hover {
+  background: var(--anti-btn-hover-bg);
+  color: var(--anti-btn-hover-color);
+}
+
+.anti-fab-preset-btn.is-active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3B82F6;
   color: #3B82F6;
   font-weight: 600;
 }

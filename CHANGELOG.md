@@ -1,5 +1,26 @@
 # Antigravity Enhancements 更新与逆向日志 (CHANGELOG)
 
+## [v2.8.0] - 2026-10-08
+
+### 🌟 核心突破 (对话区无级平滑滑动条调节与新版布局错位击穿修复)
+- **CSS 变量层叠死锁彻底清理**：
+  - 彻底剥离 `[data-anti-theme="anti"]`、`[data-anti-theme="light"]`、`[data-anti-theme="dark"]` 中硬编码的 `--anti-chat-max-width: 896px;` 定义，统一收敛至 `:root` 声明初始值；
+  - 消除元素属性选择器特异性压制，使 JS 动态设置行内变量具备最高生效优先级。
+- **重构黄金原子级宽度选择器矩阵**：
+  - 废弃失效的 `[class*="group/user-input-step"]` 及可能拉爆原生抽屉的 `[class*="overflow-y-auto"] > div.mx-auto`；
+  - 部署原子选择器：`.md-table-bleed > .mx-auto.w-full`、`[style*="max-conversation-width"]` 以及 `.w-full.animate-fade-in:has([contenteditable="true"])`，以 `!important` 彻底击穿 Antigravity 宿主新版行内 `max(30vw, ...)` 隐式下限钳位，消灭消息流与输入框宽度撕裂错位。
+- **FAB 菜单集成无级连续拖拽滑动条 (Range Slider)**：
+  - 嵌入可视化滑块组件（范围 680px ~ 1800px，步长 10px），支持像素级连续自由拖拽调宽；
+  - 实时数值标签展示当前宽度（如 `1050px`、`100% 全宽`）；
+  - 提供 4 组预设快速吸附胶囊：`紧凑 760px`、`标准 896px`、`宽屏 1140px`、`全宽 100%`，高亮当前匹配档位；
+  - 引入 `html.anti-width-resizing` 局部过渡隔离规则，拖拽期间仅关闭受控元素 transition，保障 60fps 丝滑不掉帧；
+  - 实现 `isResizingWidth` 拖拽状态锁与全局 `pointerup` 兜底监听，彻底杜绝鼠标移出菜单松开时意外触发 `onDocClick` 关闭菜单的误触现象。
+- **自动化冒烟验收升级为 10 级物理门禁**：
+  - 新增门禁 10（对话区无级平滑宽度调节与 CSS 变量同步验证），覆盖自定义像素（1280px）、预设模式及恢复；
+  - 10 级门禁实机验证 100% 全部通过。
+
+---
+
 ## [v2.7.0] - 2026-10-04
 
 ### 🌟 核心突破 (反重力羊皮纸暖色 / 纯白明亮 / 沉浸暗黑 三大主题自由切换)

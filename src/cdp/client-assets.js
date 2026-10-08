@@ -22,7 +22,7 @@ function getClientInjectionScript() {
     }
 
     // 1. Inject or Update Styles
-    var CURRENT_VERSION = '2.7.0';
+    var CURRENT_VERSION = '2.8.0';
     var existingStyle = document.getElementById('anti-enhancements-style');
     if (!existingStyle) {
       var style = document.createElement('style');
