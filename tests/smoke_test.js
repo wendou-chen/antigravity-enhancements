@@ -21,8 +21,8 @@ async function runSmokeTest() {
   console.log('  Antigravity Trancy 增强套件自动化冒烟测试 (Smoke Test)   ');
   console.log('==========================================================\n');
 
-  // 门禁 1：文件与依赖静态完整性
-  console.log('[门禁 1: 静态文件与依赖]');
+  // 门禁 1：文件与依赖静态完整性 & CHANGELOG 强制版本对齐
+  console.log('[门禁 1: 静态文件完整性 & CHANGELOG 强制规范]');
   const reqFiles = [
     'src/client/client.js',
     'src/client/client.css',
@@ -30,7 +30,9 @@ async function runSmokeTest() {
     'src/cdp/client-assets.js',
     'src/cdp/desmos-server.js',
     'src/assets/desmos_api.js',
-    'package.json'
+    'package.json',
+    'CHANGELOG.md',
+    'docs/REVERSE_ENGINEERING.md'
   ];
   for (const rel of reqFiles) {
     const full = path.join(ROOT, rel);
@@ -39,6 +41,20 @@ async function runSmokeTest() {
     } else {
       logFail(`文件丢失: ${rel}`);
     }
+  }
+
+  // CHANGELOG 强制防漏写拦截：必须完整登记当前 package.json 版本
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
+    const changelog = fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf-8');
+    const versionPattern = new RegExp(`##\\s*\\[v?${pkg.version.replace(/\\./g, '\\.')}\\]`, 'i');
+    if (versionPattern.test(changelog)) {
+      logPass(`CHANGELOG 强制规范验证通过: 已完整登记当前版本 v${pkg.version}`);
+    } else {
+      logFail(`CHANGELOG 强制规范拦截失败: CHANGELOG.md 缺少当前版本 v${pkg.version} 的记录！任何代码变更交付前必须撰写变更日志！`);
+    }
+  } catch (err) {
+    logFail(`CHANGELOG 检查异常: ${err.message}`);
   }
 
   // 门禁 2：DevTools CDP 探针与端口
