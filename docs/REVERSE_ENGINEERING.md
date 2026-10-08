@@ -248,7 +248,6 @@ Trancy 客户端对 AI 上下文消歧项采用了一套标志性的视觉语言
 ### 2. 黄金原子选择器矩阵契约
 ```css
 .md-table-bleed > .mx-auto.w-full,
-[style*="max-conversation-width"],
 .w-full.animate-fade-in:has([contenteditable="true"]) {
   max-width: var(--anti-chat-max-width) !important;
   width: 100% !important;
@@ -262,6 +261,23 @@ Trancy 客户端对 AI 上下文消歧项采用了一套标志性的视觉语言
 - **局部过渡隔离**：拖拽滑块期间向根节点挂载 `anti-width-resizing` 类，仅针对上述受控容器关闭 `transition: none !important;`，严禁使用 `*` 通配符引起数千 DOM 节点重排；
 - **指针脱离菜单保护**：拖拽滑块超出 FAB 菜单并在宿主窗口松开时，必须通过 `isResizingWidth` 锁及全局 `window.addEventListener('pointerup')` 兜底拦截，防止 `onDocClick` 意外误关菜单；
 - **弹性反序列化与多路变量分发**：支持纯数字、`px`、百分比及预设名，统一向 `:root` 分发 `--anti-chat-max-width`、`--max-conversation-width`、`--max-artifact-width`。
+
+---
+
+## 十、视口满宽几何对齐与根容器误伤阻断 (v2.8.1 紧急热修复)
+
+### 1. 根容器误伤与侧边栏截断根因
+- **属性选择器盲区**：在 v2.8.0 中，`applyChatWidth` 会将 `--max-conversation-width` 动态写入 `document.documentElement`（`<html>` 根标签）行内 style 属性；
+- **根节点通配命中**：CSS 中的 `[style*="max-conversation-width"]` 选择器因此直接命中了 `<html>` 根节点本身，触发了 `max-width: 896px !important; margin: 0 auto !important;`；
+- **视口物理压缩与错位**：导致整个应用窗口被压缩至 896px 并在屏幕居中，产生约 201px 水平偏置，将左侧原生侧边栏（0~252px）与右侧功能区直接截断挤出可视区；
+- **热修复方案**：彻底剔除 `[style*="max-conversation-width"]` 属性选择器，仅精准约束 `.md-table-bleed > .mx-auto.w-full` 与 `.w-full.animate-fade-in:has([contenteditable="true"])`，并在 `html, body` 规则补充强制满宽 `width: 100% !important; margin-left: 0 !important; margin-right: 0 !important;` 与初始化及应用调宽时的 `scrollLeft = 0` 彻底复位。
+
+### 2. 10 级物理几何门禁与实机截图存证
+- **DOMRect 坐标断言**：严密断言 `document.documentElement.getBoundingClientRect().x === 0`，确保视口无水平偏移；
+- **满宽对齐断言**：严密断言 `document.documentElement.offsetWidth` 与 `window.innerWidth` 满宽对齐（差值 <= 1px）；
+- **消息流与输入框双重约束**：同时严密验证消息列表容器与输入框容器的 computed `maxWidth` 均与 CSS 变量对齐；
+- **CDP 实机截图存证**：自动化门禁通过 CDP `Page.captureScreenshot` 自动保存完整真机渲染截图（`tests/artifacts/smoke_layout_verified.png`），提供物理级视觉证据。
+
 
 
 

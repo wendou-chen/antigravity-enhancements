@@ -309,13 +309,18 @@ async function runSmokeTest() {
     const fullWidthPass = Math.abs(document.documentElement.offsetWidth - window.innerWidth) <= 1;
     const scrollLeftPass = (document.body.scrollLeft === 0) && (document.documentElement.scrollLeft === 0);
 
-    // 6. 对话流依然保持设置的 max-width 约束
+    // 6. 对话流与输入框依然保持设置的 max-width 约束
     const currentVarWidth = document.documentElement.style.getPropertyValue('--anti-chat-max-width') || '896px';
     const bleedElem = document.querySelector('.md-table-bleed > .mx-auto.w-full');
     const inputElem = document.querySelector('.w-full.animate-fade-in:has([contenteditable="true"])');
     let chatMaxWidthPass = false;
     let actualChatMaxWidth = '';
-    if (bleedElem) {
+    if (bleedElem && inputElem) {
+      const bleedMax = window.getComputedStyle(bleedElem).maxWidth;
+      const inputMax = window.getComputedStyle(inputElem).maxWidth;
+      chatMaxWidthPass = (bleedMax === currentVarWidth) && (inputMax === currentVarWidth);
+      actualChatMaxWidth = 'bleed: ' + bleedMax + ', input: ' + inputMax;
+    } else if (bleedElem) {
       actualChatMaxWidth = window.getComputedStyle(bleedElem).maxWidth;
       chatMaxWidthPass = actualChatMaxWidth === currentVarWidth;
     } else if (inputElem) {
@@ -358,6 +363,36 @@ async function runSmokeTest() {
     logPass(`物理几何尺寸与满宽对齐: 视口坐标 x=${widthCheck.docRectX} (Pass), 满宽对齐 ${widthCheck.docOffsetWidth}px/${widthCheck.winInnerWidth}px (Pass), scrollLeft=0 (Pass), 对话流约束 (${widthCheck.actualChatMaxWidth}) 生效 (Pass)`);
   } else {
     logFail(`WidthManager 或物理几何验证异常: ${JSON.stringify(widthCheck)}`);
+  }
+
+  // 7. CDP 实机视觉渲染截图物理存证 (真机验证，彻底杜绝口头断言)
+  try {
+    const shotData = await new Promise((resolve) => {
+      const id = Math.floor(Math.random() * 100000);
+      const handler = (raw) => {
+        try {
+          const msg = JSON.parse(raw.toString());
+          if (msg.id === id) {
+            ws.off('message', handler);
+            resolve(msg.result?.data);
+          }
+        } catch {
+          ws.off('message', handler);
+          resolve(null);
+        }
+      };
+      ws.on('message', handler);
+      ws.send(JSON.stringify({ id, method: 'Page.captureScreenshot', params: { format: 'png' } }));
+    });
+    if (shotData) {
+      const artDir = path.join(ROOT, 'tests', 'artifacts');
+      if (!fs.existsSync(artDir)) fs.mkdirSync(artDir, { recursive: true });
+      const shotPath = path.join(artDir, 'smoke_layout_verified.png');
+      fs.writeFileSync(shotPath, Buffer.from(shotData, 'base64'));
+      logPass(`实机视觉渲染截图成功生成并存盘: tests/artifacts/smoke_layout_verified.png`);
+    }
+  } catch (err) {
+    logInfo(`截图生成跳过: ${err.message}`);
   }
 
   ws.close();
