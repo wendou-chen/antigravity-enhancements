@@ -24,7 +24,7 @@ function getClientInjectionScript() {
     }
 
     // 1. Inject or Update Styles
-    var CURRENT_VERSION = '2.9.0';
+    var CURRENT_VERSION = '2.9.1';
     var existingStyle = document.getElementById('anti-enhancements-style');
     if (!existingStyle) {
       var style = document.createElement('style');

@@ -121,7 +121,7 @@ async function runSmokeTest() {
     hasDesmos: Boolean(window.__ANTI_DESMOS__)
   })`);
 
-  if (domState.hasStyle && domState.styleVersion === '2.9.0') {
+  if (domState.hasStyle && domState.styleVersion === '2.9.1') {
     logPass(`样式表注入就绪，版本对齐: v${domState.styleVersion}`);
   } else {
     logFail(`样式表状态异常: ${JSON.stringify(domState)}`);
@@ -490,6 +490,33 @@ async function runSmokeTest() {
       export3dOk = false;
     }
 
+    // 6. 物理层防御与 Electron 顶栏拖拽解除验证
+    const header = drawer.querySelector('.anti-desmos-header');
+    const btn2d = drawer.querySelector('[data-dim="2d"]');
+    const btn3d = drawer.querySelector('[data-dim="3d"]');
+    const btnClear = drawer.querySelector('[data-action="clear"]');
+    const btnExport = drawer.querySelector('[data-action="export"]');
+    const btnClose = drawer.querySelector('[data-action="close"]');
+
+    const drawerStyle = getComputedStyle(drawer);
+    const headerStyle = getComputedStyle(header);
+    const btn2dStyle = getComputedStyle(btn2d);
+    const btn3dStyle = getComputedStyle(btn3d);
+    const btnClearStyle = getComputedStyle(btnClear);
+    const btnExportStyle = getComputedStyle(btnExport);
+    const btnCloseStyle = getComputedStyle(btnClose);
+
+    const physicsOk = (
+      parseInt(drawerStyle.zIndex, 10) >= 2147483620 &&
+      drawerStyle.webkitAppRegion === 'no-drag' &&
+      headerStyle.webkitAppRegion === 'no-drag' &&
+      btn2dStyle.webkitAppRegion === 'no-drag' &&
+      btn3dStyle.webkitAppRegion === 'no-drag' &&
+      btnClearStyle.webkitAppRegion === 'no-drag' &&
+      btnExportStyle.webkitAppRegion === 'no-drag' &&
+      btnCloseStyle.webkitAppRegion === 'no-drag'
+    );
+
     return {
       hasAd: true,
       isDrawerOpen,
@@ -499,7 +526,17 @@ async function runSmokeTest() {
       export2dOk,
       dim3D,
       exprCount3D,
-      export3dOk
+      export3dOk,
+      physicsOk,
+      styles: {
+        drawerZIndex: drawerStyle.zIndex,
+        drawerDrag: drawerStyle.webkitAppRegion,
+        headerDrag: headerStyle.webkitAppRegion,
+        btn2dDrag: btn2dStyle.webkitAppRegion,
+        btn3dDrag: btn3dStyle.webkitAppRegion,
+        btnClearDrag: btnClearStyle.webkitAppRegion,
+        btnCloseDrag: btnCloseStyle.webkitAppRegion
+      }
     };
   })()`);
 
@@ -507,6 +544,46 @@ async function runSmokeTest() {
     logPass(`window.__ANTI_DESMOS__ 控制器就绪: 抽屉展开成功 (.open), 2D/3D 双维度平滑切换成功, 2D/3D 高清截图导出全部就绪`);
   } else {
     logFail(`Desmos 画板控制器验证异常: ${JSON.stringify(desmosCheck)}`);
+  }
+
+  if (desmosCheck && desmosCheck.physicsOk) {
+    logPass(`顶栏按钮物理防御与 Electron 拖拽解除验证通过 (no-drag 全量生效, z-index: ${desmosCheck.styles.drawerZIndex})`);
+  } else {
+    logFail(`顶栏按钮物理样式未达到 no-drag 标准: ${JSON.stringify(desmosCheck?.styles)}`);
+  }
+
+  // 11.3.1 实机物理鼠标点击 (Input.dispatchMouseEvent) 切换 2D/3D 测试
+  try {
+    const coords3D = await evalInPage(`(() => {
+      const btn = document.querySelector('[data-dim="3d"]');
+      const r = btn.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`);
+
+    // 物理左键点击 3D 按钮
+    ws.send(JSON.stringify({ id: 9811, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: coords3D.x, y: coords3D.y, button: 'left', clickCount: 1 } }));
+    ws.send(JSON.stringify({ id: 9812, method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: coords3D.x, y: coords3D.y, button: 'left', clickCount: 1 } }));
+    await new Promise(r => setTimeout(r, 600));
+
+    const coords2D = await evalInPage(`(() => {
+      const btn = document.querySelector('[data-dim="2d"]');
+      const r = btn.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`);
+
+    // 物理左键点击 2D 按钮
+    ws.send(JSON.stringify({ id: 9813, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: coords2D.x, y: coords2D.y, button: 'left', clickCount: 1 } }));
+    ws.send(JSON.stringify({ id: 9814, method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: coords2D.x, y: coords2D.y, button: 'left', clickCount: 1 } }));
+    await new Promise(r => setTimeout(r, 600));
+
+    const finalDim = await evalInPage(`window.__ANTI_DESMOS__.dimension`);
+    if (finalDim === '2d') {
+      logPass(`真机物理鼠标点击验收通过: 3D/2D 物理鼠标点击精准响应，无拖拽拦截阻断`);
+    } else {
+      logFail(`真机物理鼠标点击未切回 2D: 当前维度 ${finalDim}`);
+    }
+  } catch (mouseErr) {
+    logFail(`真机物理鼠标点击测试异常: ${mouseErr.message}`);
   }
 
   // 11.4 测试通过 desmos-cli 的 sendToDsh 多端直推到 Antigravity (:8325)

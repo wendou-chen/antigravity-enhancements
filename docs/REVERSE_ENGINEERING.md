@@ -278,6 +278,61 @@ Trancy 客户端对 AI 上下文消歧项采用了一套标志性的视觉语言
 - **消息流与输入框双重约束**：同时严密验证消息列表容器与输入框容器的 computed `maxWidth` 均与 CSS 变量对齐；
 - **CDP 实机截图存证**：自动化门禁通过 CDP `Page.captureScreenshot` 自动保存完整真机渲染截图（`tests/artifacts/smoke_layout_verified.png`），提供物理级视觉证据。
 
+---
+
+## 十一、Desmos 2D/3D 数学画板宿主挂载与多端直推架构 (v2.9.0)
+
+### 1. 通信架构与静态资产离线化
+- **轻量通信网桥 (`DesmosServer`)**：常驻宿主机 `:8325` 端口，提供静态脚本下发与 0ms CDP 绘图直推；
+- **核心离线化**：脱机托管 Desmos 4.3MB 核心 API 脚本（`desmos_api.js`），彻底消除外部网络波动与 CDN 阻断风险；
+- **多端直推 (`desmos-cli`)**：并发探针机制，同时兼容向 DSH (:3080) 与 Antigravity (:8325) 单发与广播。
+
+### 2. 双维度双引擎无缝热切换
+- **引擎分流**：2D 模式挂载 `Desmos.GraphingCalculator`，3D 模式挂载 `Desmos.Calculator3D`；
+- **公式跨维度清洗**：从 3D 切回 2D 时，自动过滤 `z=` 曲面公式，防止 2D 引擎抛出异常中断；
+- **高清导出规范**：2D 模式通过 `asyncScreenshot` 导出，3D 模式通过官方同步 `screenshot` 导出。
+
+---
+
+## 十二、Electron `-webkit-app-region: drag` 窗口拖拽拦截与顶栏交互穿透铁律 (v2.9.1 事故沉淀)
+
+### 1. 现象与物理根因
+- **现象特征**：
+  在自动化脚本中使用 JS `element.click()` 或 `dispatchEvent` 测试完全正常，但真实用户在 Windows 桌面端用物理鼠标点击顶排四个按钮（`2D 平面 / 3D 空间`、`🧹 清空`、`💾 导出`、`✕` 关闭）完全没有任何反应，甚至光标指针无法变为 pointer 或被拖拽吞噬。
+- **底层根因剖析**：
+  - Antigravity 宿主顶栏（高度约 35~48px，包含 `Antigravity File View Window`）拥有 `-webkit-app-region: drag` 计算属性；
+  - 位于顶部 `y: 0 ~ 48px` 区域的元素（如 `.anti-desmos-header` 及其按钮），虽然在 DOM 树中处于顶层抽屉内部，但在 Windows 操作系统底层的窗口非客户区命中测试（`WM_NCHITTEST`）中：
+  - **任何未显式声明 `-webkit-app-region: no-drag !important;` 的元素，Windows 操作系统都会将其直接返回为 `HTCAPTION`（窗口标题栏）**！
+  - 操作系统将鼠标按下（`WM_LBUTTONDOWN`）直接识别为移动窗口的操作，**完全不会向 Chromium WebCore 内核分发 `mousedown`、`mouseup` 或 `click` 鼠标事件**！
+  - 此前自动化门禁使用了纯 JS 调用，绕过了 Windows OS 的非客户区拖拽测试，造成门禁全绿但真机完全失效的物理假阳性。
+
+### 2. 三重物理穿透防御守卫
+1. **CSS 物理层穿透**：
+   ```css
+   .anti-desmos-drawer {
+     z-index: 2147483620; /* 提升至系统最高安全交互层 */
+     -webkit-app-region: no-drag !important;
+   }
+   .anti-desmos-header,
+   .anti-desmos-dim-control,
+   .anti-desmos-dim-btn,
+   .anti-desmos-actions,
+   .anti-desmos-btn,
+   .anti-desmos-btn-close {
+     -webkit-app-region: no-drag !important;
+     pointer-events: auto !important;
+     position: relative;
+     z-index: 10;
+   }
+   ```
+2. **JS 运行时行内样式与委托双保险**：
+   在 `renderDrawer` 中动态创建 DOM 时，显式对 drawer、header 和每个按钮写入 `style.setProperty('-webkit-app-region', 'no-drag', 'important')`，并在 header 上设置事件委托兜底；
+3. **CDP 真机物理鼠标事件门禁验收**：
+   在冒烟测试门禁 11 中，必须增加：
+   - 物理计算样式断言：所有按钮 `webkitAppRegion === 'no-drag'`；
+   - 物理鼠标事件发送：通过 CDP 下发真实物理坐标的 `Input.dispatchMouseEvent`（左键按下与释放），验证真机物理点击能够精准切换维度。
+
+
 
 
 

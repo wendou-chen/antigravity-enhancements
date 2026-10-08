@@ -1,5 +1,5 @@
 /**
- * Antigravity Web Enhancements Client Payload (v2.9.0 VIP)
+ * Antigravity Web Enhancements Client Payload (v2.9.1 VIP)
  * Injected into Antigravity Workspace DOM via Chrome DevTools Protocol
  * Features: LaTeX Copy, Mermaid Render, Trancy Selection Translation, Vocabulary Favorites, Smooth Width Slider, Desmos Math Grapher
  */
@@ -1711,29 +1711,82 @@
       this.drawerEl = drawer;
       this.calcContainer = drawer.querySelector('#anti-desmos-calculator');
 
+      // 运行时行内样式双保险：彻底解除 Electron 顶栏拖拽拦截与层级压制
+      drawer.style.setProperty('-webkit-app-region', 'no-drag', 'important');
+      drawer.style.setProperty('z-index', '2147483620', 'important');
+      drawer.style.setProperty('pointer-events', 'auto', 'important');
+
+      const header = drawer.querySelector('.anti-desmos-header');
+      if (header) {
+        header.style.setProperty('-webkit-app-region', 'no-drag', 'important');
+        header.style.setProperty('pointer-events', 'auto', 'important');
+        header.style.setProperty('position', 'relative', 'important');
+        header.style.setProperty('z-index', '10', 'important');
+      }
+
+      const allBtns = drawer.querySelectorAll('.anti-desmos-header button');
+      allBtns.forEach(b => {
+        b.style.setProperty('-webkit-app-region', 'no-drag', 'important');
+        b.style.setProperty('pointer-events', 'auto', 'important');
+        b.style.setProperty('cursor', 'pointer', 'important');
+      });
+
+      // 按钮直接监听
       const dimBtns = drawer.querySelectorAll('.anti-desmos-dim-btn');
       dimBtns.forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
+          e.preventDefault();
           this.setDimension(btn.dataset.dim);
         });
       });
 
-      drawer.querySelector('[data-action="clear"]').addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.clear();
-        showToast('🧹 Desmos 画板', '画布公式已清空');
-      });
+      const clearBtn = drawer.querySelector('[data-action="clear"]');
+      if (clearBtn) {
+        clearBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          this.clear();
+          showToast('🧹 Desmos 画板', '画布公式已清空');
+        });
+      }
 
-      drawer.querySelector('[data-action="export"]').addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.exportImage();
-      });
+      const exportBtn = drawer.querySelector('[data-action="export"]');
+      if (exportBtn) {
+        exportBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          this.exportImage();
+        });
+      }
 
-      drawer.querySelector('[data-action="close"]').addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.closeDrawer();
-      });
+      const closeBtn = drawer.querySelector('[data-action="close"]');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          this.closeDrawer();
+        });
+      }
+
+      // 顶部工具栏委托兜底（防止子元素事件在特殊状态下漏触发）
+      if (header) {
+        header.addEventListener('click', (e) => {
+          const target = e.target && e.target.closest ? e.target.closest('button') : null;
+          if (!target) return;
+          e.stopPropagation();
+          if (target.dataset.dim) {
+            this.setDimension(target.dataset.dim);
+          } else if (target.dataset.action === 'clear') {
+            this.clear();
+            showToast('🧹 Desmos 画板', '画布公式已清空');
+          } else if (target.dataset.action === 'export') {
+            this.exportImage();
+          } else if (target.dataset.action === 'close') {
+            this.closeDrawer();
+          }
+        });
+      }
     },
 
     async ensureCalculator(targetDim = this.dimension) {
@@ -2089,7 +2142,7 @@
       <div class="anti-fab-menu">
         <div class="anti-fab-menu-header">
           <span>Antigravity · Trancy 增强</span>
-          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.9.0 VIP</span>
+          <span style="font-size: 9.5px; opacity: 0.7; color: #f59e0b; font-weight: 700;">v2.9.1 VIP</span>
         </div>
 
         <button class="anti-fab-menu-item" data-action="plan-mode" title="按 Shift+Tab 或 Alt+P 快速切换">

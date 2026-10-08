@@ -977,7 +977,9 @@ html.anti-width-resizing .w-full.animate-fade-in:has([contenteditable="true"]) {
   right: 0;
   width: 480px;
   height: 100vh;
-  z-index: 99998;
+  z-index: 2147483620; /* 提升至系统最高安全交互层，超越宿主顶栏与悬浮窗 */
+  -webkit-app-region: no-drag !important; /* 彻底击穿 Electron 顶栏拖拽拦截 */
+  pointer-events: auto !important;
   display: flex;
   flex-direction: column;
   background: var(--anti-card-bg);
@@ -1000,7 +1002,20 @@ body:has(.anti-desmos-drawer.open) .anti-fab-container {
   transition: right 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
-/* 抽屉顶部工具栏 */
+/* 抽屉顶部工具栏及其所有按钮：显式解除 Electron 顶栏拖拽拦截 */
+.anti-desmos-header,
+.anti-desmos-title-box,
+.anti-desmos-dim-control,
+.anti-desmos-dim-btn,
+.anti-desmos-actions,
+.anti-desmos-btn,
+.anti-desmos-btn-close {
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 10;
+}
+
 .anti-desmos-header {
   display: flex;
   align-items: center;
@@ -1039,6 +1054,13 @@ body:has(.anti-desmos-drawer.open) .anti-fab-container {
   color: var(--anti-btn-color);
   cursor: pointer;
   transition: all 0.15s ease;
+  user-select: none;
+}
+
+.anti-desmos-dim-btn:active,
+.anti-desmos-btn:active,
+.anti-desmos-btn-close:active {
+  transform: scale(0.96);
 }
 
 .anti-desmos-dim-btn.is-active {
@@ -1066,6 +1088,7 @@ body:has(.anti-desmos-drawer.open) .anti-fab-container {
   color: var(--anti-btn-color);
   cursor: pointer;
   transition: all 0.15s ease;
+  user-select: none;
 }
 
 .anti-desmos-btn:hover {
@@ -1082,6 +1105,7 @@ body:has(.anti-desmos-drawer.open) .anti-fab-container {
   background: transparent;
   color: var(--anti-btn-color);
   cursor: pointer;
+  user-select: none;
 }
 
 .anti-desmos-btn-close:hover {

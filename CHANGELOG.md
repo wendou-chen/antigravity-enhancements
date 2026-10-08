@@ -1,5 +1,33 @@
 # Antigravity Enhancements 更新与逆向日志 (CHANGELOG)
 
+## [v2.9.1] - 2026-10-08
+
+### 🚨 紧急热修复 (根除 Electron 顶栏拖拽拦截天坑，修复 Desmos 顶排四个按钮真机物理点击失效)
+- **物理拦截根因深入剖析**：
+  - **现象**：自动化测试中调用 JS 控制器可正常切换，但在宿主窗口中用物理鼠标点击顶排四个按钮（`2D 平面 / 3D 空间`、`🧹 清空`、`💾 导出`、`✕` 关闭）完全没有任何响应；
+  - **Electron `-webkit-app-region: drag` 窗口拖拽拦截天坑**：
+    - Antigravity 宿主顶栏（高度约 35~48px，包含 `Antigravity File View Window`）的类名为 `flex items-center gap-1 px-2 h-full bg-sidebar w-full`，其计算样式为 `-webkit-app-region: drag`；
+    - `.anti-desmos-drawer` 位于 `top: 0`，其头部 `.anti-desmos-header` 位于 `y: 0 ~ 48px`，几何位置完全落入宿主窗口的顶栏拖拽区；
+    - 在 Windows Electron 架构中，任何落入窗口 drag 区域的元素，**只要没有显式声明 `-webkit-app-region: no-drag !important;`**，Windows 操作系统底层的 `WM_NCHITTEST` 就会直接返回 `HTCAPTION`（窗口标题栏），鼠标按下时操作系统将其当作移动窗口处理，**完全不会向 Chromium Web 页面下发 `click` 或 `mousedown` 鼠标事件**！
+    - 此前测试中使用 JS API 绕过了 OS 窗口命中测试，导致门禁出现假阳性，而用户使用物理鼠标点击时所有按钮彻底失效。
+- **物理穿透与双重事件防御实施**：
+  - **CSS 层硬核穿透**：
+    - `.anti-desmos-drawer` 提升至 `z-index: 2147483620 !important;` 并注入 `-webkit-app-region: no-drag !important;`；
+    - `.anti-desmos-header` 及其内部 `.anti-desmos-dim-control`、`.anti-desmos-dim-btn`、`.anti-desmos-actions`、`.anti-desmos-btn`、`.anti-desmos-btn-close` 全量注入 `-webkit-app-region: no-drag !important; pointer-events: auto !important; position: relative; z-index: 10;`；
+    - 增加 `:active { transform: scale(0.96); }` 按下微缩放反馈，提升操作手感；
+  - **JS 运行时行内样式与委托双保险**：
+    - 在 `renderDrawer` 中为创建的 header 与所有按钮显式赋予 `style.setProperty('-webkit-app-region', 'no-drag', 'important')`；
+    - 在按钮独立监听之外，增加 `.anti-desmos-header` 上的事件委托作为兜底，杜绝子元素事件丢失；
+- **四位版本号严格对齐至 v2.9.1**：
+  - 同步更新 `package.json`、`src/cdp/client-assets.js`、`src/cdp/injector.js` 与 `src/client/client.js`。
+- **自动化冒烟门禁 11 升级真机物理鼠标点击验证**：
+  - 新增 `physicsCheck`：断言 header 与全部 4 个交互按钮的 `getComputedStyle(el).webkitAppRegion === 'no-drag'`；
+  - 新增真实 CDP 物理鼠标事件发送（`Input.dispatchMouseEvent`）：分别物理点击 3D 按钮与 2D 按钮，验证真机鼠标能精准触发维度切换；
+  - 实机渲染截图更新存盘至 `tests/artifacts/smoke_desmos_rendered.png`；
+  - 11 级物理门禁 100% 全部通过。
+
+---
+
 ## [v2.9.0] - 2026-10-08
 
 ### 🌟 核心突破 (Antigravity 原生挂载 Desmos 2D/3D 数学画板与双端通信直推)
